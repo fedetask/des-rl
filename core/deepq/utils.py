@@ -13,7 +13,8 @@ def split_replay_batch(samples):
 
     Returns:
         A tuple (states, actions, rewards, next_states, next_states_idx) where each element
-        is a numpy array with correspondent data in the rows.
+        is a numpy array with correspondent data in the rows. Pay attention that the rewards
+        array is a column vector.
 
         Since the next state can be None when episode ends, the number of elements in next_states
         can be < len(samples). For this reason, next_states_idx is a numpy array that contains
@@ -22,12 +23,14 @@ def split_replay_batch(samples):
     states = np.array([transition[0] for transition in samples])
     actions = np.array([transition[1] for transition in samples])
     rewards = np.array([transition[2] for transition in samples])
+    if len(rewards.shape) == 1:
+        rewards = rewards.reshape((rewards.shape[0], 1))
 
     next_states = []
     next_states_idx = []
-    for i in range(len(samples)):
-        if samples[i][3] is not None:
-            next_states.append(samples[i][3])
+    for i, transition in enumerate(samples):
+        if transition[3] is not None:
+            next_states.append(transition[3])
             next_states_idx.append(i)
     next_states = np.array(next_states)
     next_states_idx = np.array(next_states_idx)
