@@ -1,3 +1,15 @@
+"""This module defines the replay buffers. A replay buffer is a data structure that stores
+transitions coming from the environment, and allows sampling. This module provides a base class
+BaseReplayBuffer that defines the minimal interface that any replay buffer implementation should
+provide.
+
+Contents:
+    Base classes:
+        - BaseReplayBuffer
+    Implementations:
+        -FIFOReplayBuffer
+"""
+
 import collections
 import random
 import abc
