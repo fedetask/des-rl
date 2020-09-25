@@ -1,6 +1,9 @@
 import collections
 import random
 import abc
+import numbers
+
+import numpy as np
 
 
 class BaseReplayBuffer(abc.ABC):
@@ -15,8 +18,8 @@ class BaseReplayBuffer(abc.ABC):
         """Remember the given transition.
 
         Args:
-            transition (list): A transition in the form (s, a, r, s', ...). After s' any additional
-                information can be passed.
+            transition (list): A transition in the form (s, a, r, s', *info). After s' any
+            additional information can be passed.
         """
         pass
 
@@ -39,8 +42,8 @@ class FIFOReplayBuffer(BaseReplayBuffer):
     """Defines a simple fixed-size, FIFO evicted replay buffer, that stores transitions and allows
     sampling.
 
-    Transitions are tuples in the form (s, a, r, s', *additional_info), where additional_info may
-    be a list with any additional information.
+    Transitions are tuples in the form (s, a, r, s', ...), where after s' any additional
+    information can be stored.
     """
 
     def __init__(self, maxlen, state_shape, action_shape):
@@ -48,8 +51,8 @@ class FIFOReplayBuffer(BaseReplayBuffer):
 
         Args:
             maxlen (int): Maximum number of transitions to be stored.
-            state_shape (tuple): Shape of states.
-            action_shape (tuple): Shape of actions.
+            state_shape (tuple): Shape of a state.
+            action_shape (tuple): Shape of an action.
         """
         self.buffer = collections.deque(maxlen=maxlen)
         self.state_shape = state_shape
@@ -63,16 +66,29 @@ class FIFOReplayBuffer(BaseReplayBuffer):
     def remember(self, transition, *args, **kwargs):
         """Store the given transition
         Args:
-            transition (tuple): Tuple in the form (s, a, r, s', *additional_info).
+            transition (tuple): Tuple in the form (s, a, r, s', ...). Note that s' should be None
+                if the episode ended. After s' any additional information can be passed.
 
         Raises:
-            AssertionError if s, a, or s' shapes do not match with those declared at initialization.
+            AssertionError if given shapes do not match with those declared at initialization.
         """
-        assert transition[0].shape == self.state_shape
-        assert transition[1].shape == self.action_shape
-        if transition[3] is not None:
-            assert transition[3].shape == self.state_shape
-        self.buffer.append(transition)
+        s, a, r, s_prime, *_ = transition
+        assert isinstance(s, np.ndarray) and s.shape == self.state_shape,\
+            'The given state ' + str(s) + ' does not match shape ' + str(self.state_shape)
+        if isinstance(a, np.ndarray):
+            assert a.shape == self.action_shape, \
+                'The given action ' + str(a) + ' does not match shape ' + str(self.action_shape)
+        elif self.action_shape[0] == 1 and isinstance(a, numbers.Number):
+            a = np.array([a])  # For simplicity actions are always numpy.ndarray
+        else:
+            raise AssertionError('The given action ' + str(a) + ' does not match shape ' + str(
+                self.action_shape))
+
+        if s_prime is not None and isinstance(s_prime, np.ndarray):
+            assert s_prime.shape == self.state_shape, \
+                'The given state ' + str(s_prime) + ' does not match shape ' + str(self.state_shape)
+
+        self.buffer.append((s, a, r, s_prime))
 
     def sample(self, size, *args, **kwargs):
         """Sample uniformly from the replay buffer.
