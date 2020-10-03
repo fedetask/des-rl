@@ -70,6 +70,7 @@ if __name__ == '__main__':
     dq_nets = deepqnetworks.TargetDQNetworks(q_network=q_net, target_network=t_net)
 
     # Target computer and trainer
+    target_computer = computations.DoubleQTargetComputer(df=GAMMA)
     optimizer = torch.optim.RMSprop(dq_nets.get_trainable_params())
     trainer = computations.DQNTrainer(dq_networks=dq_nets, lr=LEARNING_RATE)
     policy_train = policies.LinearDecayEpsilonGreedyPolicy(decay_steps=DECAY_STEPS,
