@@ -18,19 +18,38 @@ import numbers
 import numpy as np
 
 
-class BaseReplayBuffer(abc.ABC):
+# --------------------------------------- REPLAY BUFFERS ------------------------------------------#
+
+
+class BaseReplayBuffer(abc.ABC, collections.UserList):
     """The base class for replay buffers.
 
     Any derived replay buffer must present an Iterable interface, therefore allowing iteration,
     sampling, etc.
     """
 
+    def add_iterable(self, iterable):
+        for i in iterable:
+            self.remember(i)
+
+    def __add__(self, e):
+        if hasattr(e, '__iter__'):
+            return self.add_iterable(e)
+        else:
+            return self.remember(e)
+
+    def append(self, e):
+        self.remember(e)
+
+    def extend(self, e):
+        return self.add_iterable(e)
+
     @abc.abstractmethod
     def remember(self, transition, *args, **kwargs):
         """Remember the given transition.
 
         Args:
-            transition (list): A transition in the form (s, a, r, s', *info). After s' any
+            transition (tuple): A transition in the form (s, a, r, s', *info). After s' any
             additional information can be passed.
         """
         pass
@@ -66,6 +85,7 @@ class FIFOReplayBuffer(BaseReplayBuffer):
             state_shape (tuple): Shape of a state.
             action_shape (tuple): Shape of an action.
         """
+        super().__init__()
         self.buffer = collections.deque(maxlen=maxlen)
         self.state_shape = state_shape
         self.action_shape = action_shape
@@ -116,3 +136,42 @@ class FIFOReplayBuffer(BaseReplayBuffer):
                              str(len(self.buffer)))
         samples = random.sample(self.buffer, size)
         return samples
+
+
+# ----------------------------------------- PREFILLERS --------------------------------------------#
+
+
+class UniformGymPrefiller:
+    """Prefiller that adds transitions to the replay buffer by sampling random actions from a Gym
+    environment.
+    """
+
+    def fill(self, replay_buffer, env, num_transitions, add_info=False, shuffle=False):
+        """Add the given number of transitions to the replay buffer by sampling
+        random actions in the given environment.
+
+        A transition is intended in the form (s, a, r, s', [info]) where s' is None if the episode
+        ended. Remember to call reset() on the environment after using this function.
+
+        Args:
+            replay_buffer (BaseReplayBuffer): A replay buffer implementation.
+            env (gym.core.Env): A Gym environment.
+            num_transitions (int): Number of transitions to be added to the replay buffer.
+            add_info (bool): Whether to append the additional information to the transitions.
+            shuffle (bool): Whether to shuffle the replay buffer after sampling the given number
+                of transitions.
+        """
+        state = env.reset()
+        for step in range(num_transitions):
+            a = env.action_space.sample()
+            s_prime, r, done, info = env.step(a)
+            if done:
+                s_prime = None
+            transition = (state, a, r, s_prime) if not add_info else (state, a, r, s_prime, info)
+            replay_buffer.remember(transition)
+            if done:
+                state = env.reset()
+            else:
+                state = s_prime
+        if shuffle:
+            random.shuffle(replay_buffer)
