@@ -134,8 +134,53 @@ class FIFOReplayBuffer(BaseReplayBuffer):
         if size > len(self.buffer):
             raise ValueError('Trying to sample ' + str(size) + ' items when buffer has only ' +
                              str(len(self.buffer)))
-        samples = random.sample(self.buffer, size)
-        return samples
+
+        indices = np.arange(len(self.buffer))
+        sampled_indices = np.random.choice(a=indices, size=size)
+        return [self.buffer[i] for i in sampled_indices]
+
+
+class PrioritizedReplayBuffer(FIFOReplayBuffer):
+    """Implementation of a prioritized replay buffer.
+
+    This replay buffer stores transitions (s, a, r, s', w) where w is the weight. Transitions are
+    sampled with probabilities proportional to this weights.
+    """
+
+    def remember(self, transition, *args, **kwargs):
+        """Add a transition to the replay buffer.
+
+        The weight of the transition is normalized by dividing it by the sum of weights in the
+        buffer remember() cost is therefore O(buffer length). TODO: Improve efficiency
+
+        Args:
+            transition (tuple): A tuple like (s, a, r, s', w). w is the weight and must be >= 0.
+        """
+        s, a, r, s_prime, w = transition
+        error_str = 'Weights of a transitions must be postive numbers.'
+        assert isinstance(w, numbers.Number), error_str
+        assert w >= 0, error_str
+
+        norm_weight = w / sum(t[4] for t in self.buffer)
+        super().remember((s, a, r, s_prime, norm_weight))
+
+    def sample(self, size, *args, **kwargs):
+        """Sample the given number of transitions with probability proportional to the weights.
+
+        Args:
+            size (int): Number of transitions to sample.
+
+        Returns:
+            A list of the sampled transitions.
+        """
+        if size > len(self.buffer):
+            raise ValueError('Trying to sample ' + str(size) + ' items when buffer has only ' +
+                             str(len(self.buffer)))
+
+        indices = np.arange(len(self.buffer))
+        weights = np.array([t[4] for t in self.buffer])
+        sampled_indices = np.random.choice(a=indices, size=size, p=weights)
+        return [self.buffer[i] for i in sampled_indices]
 
 
 # ----------------------------------------- PREFILLERS --------------------------------------------#

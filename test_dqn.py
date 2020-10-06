@@ -45,14 +45,14 @@ class QNet(nn.Module):
 
 
 if __name__ == '__main__':
-    TRAINING_STEPS = 2000
+    TRAINING_STEPS = 5000
     PRETRAIN_STEPS = 1000
-    UPDATE_NET_STEPS = 3
+    UPDATE_NET_STEPS = 10
     BATCH_SIZE = 128
     GAMMA = 0.99
-    LEARNING_RATE = 1e-3
-    EPSILON_START = 0.8
-    EPSILON_END = 0.0
+    LEARNING_RATE = 0.5e-3
+    EPSILON_START = 1.0
+    EPSILON_END = 0.1
     DECAY_STEPS = TRAINING_STEPS
     TEST_EPISODES = 100
 
@@ -73,9 +73,9 @@ if __name__ == '__main__':
     target_computer = computations.DoubleQTargetComputer(df=GAMMA)
     optimizer = torch.optim.RMSprop(dq_nets.get_trainable_params())
     trainer = computations.DQNTrainer(dq_networks=dq_nets, lr=LEARNING_RATE)
-    policy_train = policies.LinearDecayEpsilonGreedyPolicy(decay_steps=DECAY_STEPS,
-                                                           start_epsilon=EPSILON_START,
-                                                           end_epsilon=EPSILON_END)
+    policy_train = policies.ExponentialDecayEpsilonGreedy(decay_steps=DECAY_STEPS,
+                                                          start_epsilon=EPSILON_START,
+                                                          end_epsilon=EPSILON_END)
 
     prefiller.fill(replay_buffer, env, PRETRAIN_STEPS, shuffle=True)
 
@@ -91,7 +91,7 @@ if __name__ == '__main__':
     state = env.reset()
     for step in tqdm(range(TRAINING_STEPS)):
         with torch.no_grad():
-            q_values = dq_nets.predict_values(np.expand_dims(state, 0))
+            q_values = dq_nets.predict_values(torch.Tensor(state).float())
             action = policy_train.act(q_values)[0]
         argmax_q_values.append(q_values.numpy().max())
         epsilons.append(policy_train.cur_epsilon)
@@ -108,7 +108,7 @@ if __name__ == '__main__':
         loss, grads = trainer.train(batch, targets)
         losses.append(loss)
         if step % UPDATE_NET_STEPS == 0:
-            dq_nets.update()
+            dq_nets.update_hard()
 
         episode_steps += 1
 
