@@ -226,9 +226,9 @@ class DeepQActorCritic(BaseDQActorCriticNetworks):
         self.actor_net = actor_net
 
         if critic_target_nets is None:  # TODO re-initialize target weights?
-            self.critic_target_nets = critic_target_nets
-        else:
             self.critic_target_nets = [copy.deepcopy(net) for net in self.critic_nets]
+        else:
+            self.critic_target_nets = critic_target_nets
 
         if actor_target_net is None:
             self.actor_target_net = copy.deepcopy(self.actor_net)
@@ -252,7 +252,7 @@ class DeepQActorCritic(BaseDQActorCriticNetworks):
 
         Returns:
             A Tensor with the values for the given state-action pairs. If mode 'all' is selected,
-            a (N x n x 1) Tensor is returned, where N is the batch size and n is the number of
+            a (N x k x 1) Tensor is returned, where N is the batch size and k is the number of
             networks.
         """
         assert states.size()[0] == actions.size()[0],\
@@ -291,7 +291,7 @@ class DeepQActorCritic(BaseDQActorCriticNetworks):
 
         Returns:
             A Tensor with the target values for the given state-action pairs. If mode 'all' is
-            selected, a (N x n x 1) Tensor is returned, where N is the batch size and n is
+            selected, a (N x k x 1) Tensor is returned, where N is the batch size and k is
             the number of networks.
         """
         assert states.size()[0] == actions.size()[0], \
@@ -309,7 +309,7 @@ class DeepQActorCritic(BaseDQActorCriticNetworks):
         if mode == 'avg':
             return torch.mean(q_values, dim=1)
         if mode == 'min':
-            return torch.min(q_values, dim=1)
+            return torch.min(q_values, dim=1)[0]
         if mode == 'all':
             return q_values
 
@@ -324,7 +324,10 @@ class DeepQActorCritic(BaseDQActorCriticNetworks):
             Iterator[torch.nn.parameter.Parameter] for each critic network, and actor params is an
             Iterator[torch.nn.parameter.Parameter] for the actor network.
         """
-        return ([net.parameters() for net in self.critic_nets], self.actor_net.parameters())
+        critics_params = []
+        for net in self.critic_nets:
+            critics_params += list(net.parameters())
+        return (critics_params, self.actor_net.parameters())
 
     def update_actor(self, mode='soft', tau=0.05, *args, **kwargs):
         """Update the target actor weights with the learning actor weights.
