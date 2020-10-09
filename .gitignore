@@ -130,3 +130,8 @@ dmypy.json
 
 # Pycharm
 .idea
+
+
+# Experiments
+experiment_results/
+
