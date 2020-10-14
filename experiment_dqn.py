@@ -6,11 +6,7 @@ from tqdm import tqdm
 import numpy as np
 import json
 
-from core.deepq import utils
-from core.deepq import policies
-from core.deepq import computations
-from core.deepq import deepqnetworks
-from core.deepq import replay_buffers
+from deepq import computations, deepqnetworks, policies, replay_buffers, utils
 import experiment_utils
 import hardcoded_policies
 

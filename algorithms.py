@@ -2,20 +2,14 @@
 yours from the available components.
 """
 
-import abc
 import torch
 import torch.nn.functional as F
-from torch import nn
 import numpy as np
 import copy
 import tqdm
 import itertools
 
-from core.deepq import deepqnetworks
-from core.deepq import policies
-from core.deepq import replay_buffers
-from core.deepq import computations
-from core.deepq import utils
+from deepq import computations, deepqnetworks, policies, replay_buffers, utils
 
 
 class TD3:
@@ -177,7 +171,7 @@ class TD3:
         next_state = next_state if not done else None
         transition = [state, action, reward, next_state]
         if self.prioritized_replay:
-            transition.append(self.replay_buffer.avg_weight)
+            transition.append(self.replay_buffer.avg_td_error)
         self.replay_buffer.remember(transition)
         if len(self.replay_buffer.buffer) < self.batch_size:
             return
@@ -190,9 +184,6 @@ class TD3:
 
         if self.prioritized_replay:
             self._update_prioritized_buffer(batch, sampled_transitions, targets)
-
-        # Train critics at each step, and actor only every train_actor_every steps
-        if self.prioritized_replay:
             train_res = self.trainer.train(
                 batch,
                 targets,
@@ -276,7 +267,7 @@ class TD3:
 
 if __name__ == '__main__':
     import gym
-    from core import networks
+    import networks
     from matplotlib import pyplot as plt
     import hardcoded_policies
 
