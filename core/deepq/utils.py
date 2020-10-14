@@ -24,7 +24,9 @@ def split_replay_batch(samples):
     actions = np.array([transition[1] for transition in samples])
     rewards = np.array([transition[2] for transition in samples])
     if len(rewards.shape) == 1:
-        rewards = rewards.reshape((rewards.shape[0], 1))
+        rewards = np.expand_dims(rewards, 1)
+    if len(actions.shape) == 1:
+        actions = np.expand_dims(actions, 1)
 
     next_states = []
     next_states_idx = []
