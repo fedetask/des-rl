@@ -20,6 +20,14 @@ class BaseTargetComputer(abc.ABC):
     DQNetworks.
     """
 
+    def __init__(self, dtype=torch.float, *args, **kwargs):
+        """Instantiate the target computer.
+
+        Args:
+            dtype (torch.dtype): Type to be used in computations.
+        """
+        self.dtype = dtype
+
     @abc.abstractmethod
     def compute_targets(self, batch, *args, **kwargs):
         """Compute the target values for the given batch and Q networks.
@@ -44,6 +52,14 @@ class BaseTrainer(abc.ABC):
     A Trainer takes care of training the DQNetworks from the given target values.
     """
 
+    def __init__(self, dtype=torch.float, *args, **kwargs):
+        """Instantiate the trainer.
+
+        Args:
+            dtype (torch.dtype): Type to be used in computations.
+        """
+        self.dtype = dtype
+
     @abc.abstractmethod
     def train(self, batch, targets, *args, **kwargs):
         """Perform one or several training steps on the DQNetworks object.
@@ -62,21 +78,23 @@ class FixedTargetComputer(BaseTargetComputer):
     """Implementation of a computer that computes targets from y = r + max_a' Q(s', a')
     """
 
-    def __init__(self, dq_networks, df=0.99):
+    def __init__(self, dq_networks, df=0.99, dtype=torch.dtype):
         """Instantiate the target computer.
 
         Args:
             dq_networks (core.deepq.deepqnetworks.BaseDQNetworks): The DQNetworks object that
                 will be used to compute the targets.
             df (float): Discount factor in [0, 1].
+            dtype (torch.dtype): Type to be used in computations.
         """
+        super().__init__(dtype=dtype)
         self.dq_networks = dq_networks
         self.df = df
 
     def compute_targets(self, batch, *args, **kwargs):
         states, acts, rewards, next_states, next_states_idx = batch
 
-        target_values = torch.tensor(rewards).float()  # Init target values with rewards
+        target_values = torch.tensor(rewards, dtype=self.dtype)  # Init target values with rewards
         with torch.no_grad():
             max_q = self.dq_networks.predict_targets(next_states).max(dim=1).values.unsqueeze(dim=1)
             target_values[next_states_idx] += self.df * max_q
@@ -87,14 +105,16 @@ class DoubleQTargetComputer(BaseTargetComputer):
     """Implementation of the Double Q Network technique for computing the targets.
     """
 
-    def __init__(self, dq_networks, df=0.99):
+    def __init__(self, dq_networks, df=0.99, dtype=torch.float):
         """Instantiate the double Q-learning target computer.
 
         Args:
             dq_networks (core.deepq.deepqnetworks.BaseDQNetworks): The DQNetworks object that
                 will be used to compute the targets.
             df (float): The discount factor
+            dtype (torch.dtype): Type to be used in computations.
         """
+        super().__init__(dtype=dtype)
         self.dq_networks = dq_networks
         self.df = df
 
@@ -115,7 +135,7 @@ class DoubleQTargetComputer(BaseTargetComputer):
         """
         states, acts, rewards, next_states, next_states_idx = batch
 
-        target_values = torch.tensor(rewards).float()  # Init target values with rewards
+        target_values = torch.tensor(rewards, dtype=self.dtype)  # Init target values with rewards
 
         # Compute Q values with Double Q Learning
         with torch.no_grad():
@@ -139,7 +159,8 @@ class TD3TargetComputer(BaseTargetComputer):
                  min_action=None,
                  df=0.99,
                  target_noise=0.2,
-                 noise_clip=0.5):
+                 noise_clip=0.5,
+                 dtype=torch.float):
         """Instantiate the TD3 target computer.
 
         Args:
@@ -154,7 +175,9 @@ class TD3TargetComputer(BaseTargetComputer):
                 each dimension.
             noise_clip (Union[float, numpy.ndarray]): Noise will be clipped to
                 (-noise_clip, +noise_clip).
+            dtype (torch.dtype): Type to be used in computations.
         """
+        super().__init__(dtype=dtype)
         assert type(max_action) == type(min_action), 'max_action and min_action must have same type'
 
         self.dqac_nets = dqac_nets
@@ -187,29 +210,29 @@ class TD3TargetComputer(BaseTargetComputer):
         Returns:
             A Numpy column vector with computed target values on the rows.
         """
-        states, acts, rewards, next_states, next_states_idx = batch
+        states, actions, rewards, next_states, next_states_idx = batch
+        actions_ts = torch.tensor(actions, dtype=self.dtype)
+        rewards_ts = torch.tensor(rewards, dtype=self.dtype)
+        next_states_ts = torch.tensor(next_states, dtype=self.dtype)
+        next_states_idx_ts = torch.tensor(next_states_idx, dtype=torch.long)
 
-        states_ts = torch.Tensor(states).float()
-        acts_ts = torch.Tensor(acts).float()
-        rewards_ts = torch.Tensor(rewards).float()
-        next_states_ts = torch.Tensor(next_states).float()
-        next_states_idx_ts = torch.Tensor(next_states_idx).long()
-
-        # Sampling and clamping noise
-        noise_shape = (len(next_states_idx_ts), *acts_ts.size()[1:])
-        noise = (torch.randn(noise_shape) * self.target_noise).float()
-        noise = self._clamp(noise, -self.noise_clip, self.noise_clip)
-
-        # Compute target actions and clamping if a max range is specified.
         with torch.no_grad():
-            next_action = self.dqac_nets.predict_target_actions(next_states_ts)
-            next_action += noise
-            if self.max_action is not None:
-                next_action = self._clamp(next_action, self.min_action, self.max_action)
-
-            # Compute target values
-            target_values = self.dqac_nets.predict_targets(next_states_ts, next_action, mode='min')
-            rewards_ts[next_states_idx_ts] += self.df * target_values
+            # Sampling and clamping noise
+            noise_shape = (len(next_states_idx_ts), *actions_ts.size()[1:])
+            noise = torch.randn(noise_shape) * self.target_noise
+            noise = self._clamp(noise, -self.noise_clip, self.noise_clip)
+            # Compute target actions and clamping if a max range is specified.
+            if next_states_idx.shape[0] > 0:
+                next_action = self.dqac_nets.predict_target_actions(next_states_ts) + noise
+                if self.max_action is not None:
+                    next_action = self._clamp(next_action, self.min_action, self.max_action)
+                # Compute target values
+                target_values = self.dqac_nets.predict_targets(
+                    next_states_ts,
+                    next_action,
+                    mode='min'
+                )
+                rewards_ts[next_states_idx_ts] += self.df * target_values
         return rewards_ts.detach().numpy()
 
     def _clamp(self, tensor, min_value, max_value):
@@ -228,7 +251,14 @@ class TD3TargetComputer(BaseTargetComputer):
 
 class DQNTrainer(BaseTrainer):
 
-    def __init__(self, dq_networks, loss=F.mse_loss, optimizer=None, lr=1e-4, momentum=0.9):
+    def __init__(
+            self,
+            dq_networks,
+            loss=F.mse_loss,
+            optimizer=None,
+            lr=1e-4,
+            momentum=0.9,
+            dtype=torch.float):
         """Instantiate the DQNTrainer.
 
         Args:
@@ -240,7 +270,9 @@ class DQNTrainer(BaseTrainer):
                 a SGD optimizer with the given learning rate and momentum will be used.
             lr (float): Learning rate for the SGD optimizer.
             momentum (float): Momentum for the SGD optimizer.
+            dtype (torch.dtype): Type to be used in computations.
         """
+        super().__init__(dtype=dtype)
         self.dq_networks = dq_networks
         self.loss = loss
         if optimizer is not None:
@@ -267,9 +299,10 @@ class DQNTrainer(BaseTrainer):
         Returns:
             A tuple with training info: (loss, grads)
         """
-        states, actions, rewards, next_states, next_states_idx = batch
-        actions_idx_ts = torch.tensor(actions)
-        targets_ts = torch.tensor(targets).float()
+        states, actions, _, _, next_states_idx = batch
+        actions_idx_ts = torch.tensor(actions, dtype=torch.long)
+        targets_ts = torch.tensor(targets, dtype=self.dtype)
+
         values = self.dq_networks.predict_values(states).gather(1, actions_idx_ts)
         loss = self.loss(values, targets_ts)
         self.optimizer.zero_grad()
@@ -292,14 +325,14 @@ class TD3Trainer(BaseTrainer):
                  critic_optimizer=None,
                  actor_optimizer=None,
                  critic_lr=0.5e-3,
-                 actor_lr=0.5e-3):
+                 actor_lr=0.5e-3,
+                 dtype=torch.float):
         """Instantiate the TD3 trainer.
 
         Args:
             dqac_networks (core.deepq.deepqnetworks.DeepQActorCritic): The DeepQActorCritic
                 containing the networks to train.
-            loss (function):
-                loss (function): A function that takes two Tensors (values and targets) and returns
+            loss: A function that takes two Tensors (values and targets) and returns
                 a scalar tensor with the loss value.
             critic_optimizer (torch.optim.Optimizer): Optimizer to use for training the critics.
                 If None, an Adam optimizer with the given learning rate will be used.
@@ -307,17 +340,23 @@ class TD3Trainer(BaseTrainer):
                 If None, an Adam optimizer with the given learning rate will be used.
             critic_lr (float): Learning rate for the critic optimizer when using the default.
             actor_lr (float): Learning rate for the actor optimizer when using the default.
+            dtype (torch.dtype): Type used for tensor computations.
         """
+        super().__init__(dtype=dtype)
         self.dqac_networks = dqac_networks
         self.loss = loss
         if critic_optimizer is None:
-            self.critic_optimizer = torch.optim.Adam(dqac_networks.get_trainable_params()[0],
-                                                     lr=critic_lr)
+            self.critic_optimizer = torch.optim.Adam(
+                dqac_networks.get_trainable_params()[0],
+                lr=critic_lr
+            )
         if actor_optimizer is None:
-            self.actor_optimizer = torch.optim.Adam(dqac_networks.get_trainable_params()[1],
-                                                    lr=actor_lr)
+            self.actor_optimizer = torch.optim.Adam(
+                dqac_networks.get_trainable_params()[1],
+                lr=actor_lr
+            )
 
-    def train(self, batch, targets, train_actor=False, *args, **kwargs):
+    def train(self, batch, targets, train_actor=False, weights=None, *args, **kwargs):
         """Perform one optimization step on the critic and actor networks for the given samples.
 
         Args:
@@ -330,24 +369,32 @@ class TD3Trainer(BaseTrainer):
             targets (numpy.ndarray): A numpy array with target values for each state-action pair in
                 the batch.
             train_actor (bool): Whether to train the actor network.
+            weights (numpy.ndarray): Optional array of weights for the gradient of each sample.
 
         """
         states, actions, rewards, next_states, next_states_idx = batch
-        states_ts = torch.Tensor(states).float()
-        actions_ts = torch.Tensor(actions).float()
-        targets_ts = torch.Tensor(targets).float()
+        states_ts = torch.tensor(states, dtype=self.dtype)
+        actions_ts = torch.tensor(actions, dtype=self.dtype)
+        targets_ts = torch.tensor(targets, dtype=self.dtype)
 
         q_values = self.dqac_networks.predict_values(states_ts, actions_ts, mode='all')
         critic_loss = q_values.size()[1] * self.loss(q_values, targets_ts[:, None, :])
+        if weights is not None:
+            critic_loss *= torch.tensor(weights, dtype=self.dtype)
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
         self.critic_optimizer.step()
 
+        actor_loss = None
         if train_actor:
             act = self.dqac_networks.predict_actions(states_ts)
-            actor_loss = - self.dqac_networks.predict_values(states_ts, act).mean()
+            actor_loss = - self.dqac_networks.predict_values(states_ts, act, 'rand').mean()
             self.actor_optimizer.zero_grad()
             actor_loss.backward()
             self.actor_optimizer.step()
 
+        return {
+            'critic_loss': float(critic_loss.detach().numpy()),
+            'actor_loss': float(actor_loss.detach().numpy()) if actor_loss is not None else None,
+        }
 
