@@ -147,6 +147,15 @@ class BaseDQActorCriticNetworks(abc.ABC):
         """
         pass
 
+    @abc.abstractmethod
+    def type(self, dtype):
+        """Set the type of all the network tensors to the given type.
+
+        Args:
+            dtype (torch.dtype): Desired type of the networks layers.
+        """
+        pass
+
 
 # ------------------------------------ IMPLEMENTATIONS ---------------------------------------- #
 
@@ -210,7 +219,12 @@ class DeepQActorCritic(BaseDQActorCriticNetworks):
     TD3, that uses two.
     """
 
-    def __init__(self, critic_nets, actor_net, critic_target_nets=None, actor_target_net=None):
+    def __init__(self,
+                 critic_nets,
+                 actor_net,
+                 critic_target_nets=None,
+                 actor_target_net=None,
+                 dtype=torch.float):
         """
 
         Args:
@@ -220,22 +234,23 @@ class DeepQActorCritic(BaseDQActorCriticNetworks):
                 If None, a copy the critic networks will be used.
             actor_target_net (torch.nn.Module): Actor network used to compute actions for
                 targets. If None, a copy of actor_net will be used.
+            dtype (torch.dtype): Type to which network layers will be set to. Use None for leave
+                the networks unchanged.
         """
         super().__init__()
         self.critic_nets = critic_nets
         self.actor_net = actor_net
-
-        if critic_target_nets is None:  # TODO re-initialize target weights?
+        if critic_target_nets is None:
             self.critic_target_nets = [copy.deepcopy(net) for net in self.critic_nets]
         else:
             self.critic_target_nets = critic_target_nets
-
         if actor_target_net is None:
             self.actor_target_net = copy.deepcopy(self.actor_net)
         else:
             self.actor_target_net = actor_target_net
+        self.type(dtype)
 
-    def predict_values(self, states, actions, mode='first', *args, **kwargs):
+    def predict_values(self, states, actions, mode='all', *args, **kwargs):
         """Predict the values for the given state-action pairs.
 
         Values can be computed from the critic networks in several modes:
@@ -272,9 +287,10 @@ class DeepQActorCritic(BaseDQActorCriticNetworks):
             return q_values
 
     def predict_actions(self, states, *args, **kwargs):
-        return self.actor_net(states)
+        actions = self.actor_net(states)
+        return actions
 
-    def predict_targets(self, states, actions, mode='min', *args, **kwargs):
+    def predict_targets(self, states, actions, mode='all', *args, **kwargs):
         """Predict the target values for the given state-action pairs.
 
         Targets can be computed from the critic networks in several modes:
@@ -302,6 +318,7 @@ class DeepQActorCritic(BaseDQActorCriticNetworks):
         if mode == 'rand':
             net = random.choice(self.critic_target_nets)
             return net(states, actions)
+
         q_values = torch.stack(
             [target_critic(states, actions) for target_critic in self.critic_target_nets],
             dim=1
@@ -342,9 +359,13 @@ class DeepQActorCritic(BaseDQActorCriticNetworks):
         if mode == 'hard':
             self.actor_target_net = copy.deepcopy(self.actor_net)
         elif mode == 'soft':
-            for param, target_param in zip(self.actor_net.parameters(),
-                                           self.actor_target_net.parameters()):
-                target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
+            for actor_param, actor_target_param in zip(
+                    self.actor_net.parameters(),
+                    self.actor_target_net.parameters()
+            ):
+                actor_target_param.data.copy_(
+                    tau * actor_param.data + (1 - tau) * actor_target_param.data
+                )
 
     def update_critic(self, mode='hard', tau=0.05, *args, **kwargs):
         """Update the target critic networks with the learning critic networks.
@@ -361,6 +382,23 @@ class DeepQActorCritic(BaseDQActorCriticNetworks):
             self.critic_target_nets = [copy.deepcopy(net) for net in self.critic_nets]
         elif mode == 'soft':
             for critic_net, critic_target_net in zip(self.critic_nets, self.critic_target_nets):
-                for param, target_param in zip(critic_net.parameters(),
-                                               critic_target_net.parameters()):
-                    target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
+                for critic_param, critic_target_param in zip(
+                        critic_net.parameters(),
+                        critic_target_net.parameters()
+                ):
+                    critic_target_param.data.copy_(
+                        tau * critic_param.data + (1 - tau) * critic_target_param.data
+                    )
+
+    def type(self, dtype):
+        """Set all the networks to the given type.
+
+        Args:
+            dtype (torch.dtype): Desired type of the network layers.
+        """
+        for net in self.critic_nets:
+            net.type(dtype)
+        for net in self.critic_target_nets:
+            net.type(dtype)
+        self.actor_net.type(dtype)
+        self.actor_target_net.type(dtype)
