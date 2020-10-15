@@ -62,9 +62,8 @@ class BaseReplayBuffer(abc.ABC, collections.UserList):
             size (int): Number of transitions to sample.
 
         Returns:
-            A tuple in the form (states, actions, rewards, next_states, ...), where each element is
-            a numpy array with the correspondent data in the rows. After next_states,
-            any additional information can be returned.
+            A tuple (transitions, info) where transitions is a list of sampled transitions, and
+            info is a dictionary with additional information.
         """
         pass
 
@@ -104,7 +103,8 @@ class FIFOReplayBuffer(BaseReplayBuffer):
             size (int): Number of transitions to sample.
 
         Returns:
-            A list of the sampled transitions.
+            A tuple (transitions, info). transitions is a list with the sampled transitions.
+            info is an empty dictionary.
         """
         if size > len(self.buffer):
             raise ValueError(
@@ -114,7 +114,7 @@ class FIFOReplayBuffer(BaseReplayBuffer):
 
         indices = np.arange(len(self.buffer))
         sampled_indices = np.random.choice(a=indices, size=size, replace=False)
-        return [self.buffer[i] for i in sampled_indices]
+        return [self.buffer[i] for i in sampled_indices], {}  # Empty dict for compatibility
 
 
 class PrioritizedReplayBuffer(FIFOReplayBuffer):
@@ -171,11 +171,13 @@ class PrioritizedReplayBuffer(FIFOReplayBuffer):
         # Compute probabilities and sample
         probabilities = np.power(td_errors, self.alpha)
         probabilities /= np.sum(probabilities)
-        sampled_indices = np.random.choice(a=chunk, size=size, p=probabilities, replace=False)
-        sampled = [self.buffer[i] for i in sampled_indices]
-        weights = np.power(len(self.buffer) * probabilities, -1)
+        sampled_indices = np.random.choice(
+            a=range(len(chunk)), size=size, p=probabilities, replace=False
+        )
+        sampled = [self.buffer[i] for i in chunk[sampled_indices]]
+        weights = np.power(len(self.buffer) * probabilities[sampled_indices], -1)
         weights /= np.sum(weights)
-        return sampled, weights
+        return sampled, {'weights': weights}
 
 
 # ----------------------------------------- PREFILLERS --------------------------------------------#
