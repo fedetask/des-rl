@@ -42,9 +42,9 @@ def cartpole_perfect(obs):
 def mountain_car_deterministic(obs):
     pos, vel = obs
     if vel < 0:
-        return np.array([-2])
+        return np.array([-1])
     else:
-        return np.array([+2])
+        return np.array([+1])
 
 
 def mountain_car_explore(obs):
@@ -64,11 +64,28 @@ def mountain_car_normal(obs):
         return (np.random.randn(1) + 0.1) * sigma
 
 
+def pendulum(obs):
+    cos, sin, vel = obs
+    left, right = np.array([-2]), np.array([2])
+    if vel >= 0:
+        if cos <= 0:
+            action = right
+        else:
+            action = left
+    else:
+        if cos <= 0:
+            action = left
+        else:
+            action = right
+    #print('State: ' + str(obs) + ' action: ' + str(action))
+    return action
+
+
 if __name__ == '__main__':
     TEST_EPISODES = 100
 
-    env = gym.make('MountainCarContinuous-v0')
-    policy = mountain_car_explore
+    env = gym.make('Pendulum-v0')
+    policy = pendulum
 
     rewards = [0]
     target_reached = 0
@@ -79,6 +96,7 @@ if __name__ == '__main__':
             action = policy(state)
             next_state, rew, done, info = env.step(action)
             #env.render()
+            #input()
             rewards[-1] += rew
             target_reached += rew > 0
             state = next_state
