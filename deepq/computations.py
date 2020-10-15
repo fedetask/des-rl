@@ -9,10 +9,15 @@ the given targets.
 """
 
 import abc
+import sys
+import os
+
 import numpy as np
 import torch
 from torch.nn import functional as F
-import numbers
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import common
 
 
 class BaseTargetComputer(abc.ABC):
@@ -220,12 +225,12 @@ class TD3TargetComputer(BaseTargetComputer):
             # Sampling and clamping noise
             noise_shape = (len(next_states_idx_ts), *actions_ts.size()[1:])
             noise = torch.randn(noise_shape) * self.target_noise
-            noise = self._clamp(noise, -self.noise_clip, self.noise_clip)
+            noise = common.clamp(noise, -self.noise_clip, self.noise_clip)
             # Compute target actions and clamping if a max range is specified.
             if next_states_idx.shape[0] > 0:
                 next_action = self.dqac_nets.predict_target_actions(next_states_ts) + noise
                 if self.max_action is not None:
-                    next_action = self._clamp(next_action, self.min_action, self.max_action)
+                    next_action = common.clamp(next_action, self.min_action, self.max_action)
                 # Compute target values
                 target_values = self.dqac_nets.predict_targets(
                     next_states_ts,
@@ -234,19 +239,6 @@ class TD3TargetComputer(BaseTargetComputer):
                 )
                 rewards_ts[next_states_idx_ts] += self.df * target_values
         return rewards_ts.detach().numpy()
-
-    def _clamp(self, tensor, min_value, max_value):
-        if isinstance(max_value, numbers.Number):
-            clamped = tensor.clamp(min_value, max_value)
-        elif isinstance(max_value, torch.Tensor):
-            clamped = torch.max(
-                torch.min(tensor, max_value),
-                min_value
-            )
-        else:
-            raise TypeError('The given max_action type ' + str(type(max_value)) +
-                            ' is not understood.')
-        return clamped
 
 
 class DQNTrainer(BaseTrainer):
@@ -378,9 +370,14 @@ class TD3Trainer(BaseTrainer):
         targets_ts = torch.tensor(targets, dtype=self.dtype)
 
         q_values = self.dqac_networks.predict_values(states_ts, actions_ts, mode='all')
-        critic_loss = q_values.size()[1] * self.loss(q_values, targets_ts[:, None, :])
+        # TODO: How to extend to other losses?
+        # critic_loss = q_values.size()[1] * self.loss(q_values, targets_ts[:, None, :])
+
+        squared_errors = ((q_values - targets_ts[:, None, :]) ** 2).squeeze().sum(-1) / \
+                         q_values.size()[1]
         if weights is not None:
-            critic_loss *= torch.tensor(weights, dtype=self.dtype)
+            squared_errors *= torch.tensor(weights, dtype=self.dtype)
+        critic_loss = q_values.size()[1] * squared_errors.mean()
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
         self.critic_optimizer.step()
