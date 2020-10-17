@@ -101,7 +101,30 @@ class TD3:
             start_epsilon=epsilon_start, end_epsilon=epsilon_end, decay_steps=training_steps,
             decay_schedule=epsilon_decay_schedule, min_action=min_action, max_action=max_action)
 
-    def train(self, env, buffer_prefill_steps=20000):
+    def train(self, env, buffer_prefill_steps=20000, buffer_collection_policy=None):
+        """Perform TD3 training.
+
+        Args:
+            env (gym.Env): The Gym environment.
+            buffer_prefill_steps (int): Number of transitions to add to replay buffer before
+                starting the training.
+            buffer_collection_policy: Function (numpy.ndarray) -> numpy.ndarray mapping states to
+                actions. If not None, this function will be used to collect transitions.
+
+        Returns:
+            A dictionary with training statistics:
+            {
+                'rewards':              # Rewards per episode
+                'end_steps':            # Time steps at which each episode ended
+                'start_steps':          # Time steps at which each episode started
+                'predicted_targets':    # Average predicted value at each time step
+                'real_targets':         # Real value at each time step
+                'eval_steps':           # Time steps at which the agent was evaluated
+                'eval_scores':          # Evaluation scores
+                'critic_loss':          # Loss of critic at each time step
+                'actor_loss':           # Loss of actor at each time step
+            }
+        """
         rewards = []
         start_steps = [0]
         end_steps = []
@@ -115,12 +138,13 @@ class TD3:
         actor_losses = []
 
         if buffer_prefill_steps > 0:
-            prefiller = replay_buffers.UniformGymPrefiller()
+            prefiller = replay_buffers.BufferPrefiller()
             prefiller.fill(
                 self.replay_buffer,
                 env,
                 num_transitions=buffer_prefill_steps,
-                prioritized_replay=self._prioritized_replay
+                prioritized_replay=self._prioritized_replay,
+                collection_policy=buffer_collection_policy
             )
 
         next_eval = self._evaluate_every
