@@ -2,6 +2,7 @@ import numbers
 
 import torch
 import numpy as np
+import itertools
 
 
 class ParameterUpdater:
@@ -124,3 +125,20 @@ def split_replay_batch(samples):
     next_states = np.array(next_states)
     next_states_idx = np.array(next_states_idx)
     return states, actions, rewards, next_states, next_states_idx
+
+
+def compute_real_targets(episode_rewards, df):
+    """Compute the target value at each time step for a given sequence of rewards.
+
+    Args:
+        episode_rewards (list): List of rewards from the beginning to the end of the episode.
+        df (float): Discount factor.
+
+    Returns:
+        A list of the total discounted returns for each time step.
+    """
+    targets = list(itertools.accumulate(
+        episode_rewards[::-1],
+        lambda tot, x: x + df * tot
+    ))
+    return targets[::-1]
