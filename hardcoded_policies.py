@@ -66,7 +66,7 @@ def mountain_car_normal(obs):
 
 def pendulum(obs):
     cos, sin, vel = obs
-    left, right = np.array([-2]), np.array([2])
+    left, right = np.array([-1]), np.array([1])
     if vel >= 0:
         if cos <= 0:
             action = right
@@ -81,28 +81,24 @@ def pendulum(obs):
     return action
 
 
-if __name__ == '__main__':
-    TEST_EPISODES = 100
-
-    env = gym.make('Pendulum-v0')
-    policy = pendulum
-
-    rewards = [0]
-    target_reached = 0
-    for e in range(TEST_EPISODES):
+def eval_policy(policy, env, test_episodes=100, render=False, wait_key=False):
+    rewards = []
+    for e in range(test_episodes):
         state = env.reset()
         done = False
+        tot_reward = 0
         while not done:
             action = policy(state)
             next_state, rew, done, info = env.step(action)
-            #env.render()
-            #input()
-            rewards[-1] += rew
-            target_reached += rew > 0
+            if render:
+                env.render()
+            if wait_key:
+                input()
+            tot_reward += rew
             state = next_state
-            if done:
-                rewards.append(0)
-    del rewards[-1]
-    env.close()
-    print('Average reward over ' + str(TEST_EPISODES) + ': ' + str(np.mean(rewards)))
-    print('Goal reached in ' + str(target_reached) + ' episodes over ' + str(TEST_EPISODES))
+        rewards.append(tot_reward)
+    return np.array(rewards)
+
+
+if __name__ == '__main__':
+    pass
