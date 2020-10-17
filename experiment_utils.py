@@ -9,15 +9,48 @@ from matplotlib import pyplot as plt
 EXPERIMENT_RESULT_DIR = 'experiment_results'
 
 
-def merge_plots(plots, min_threshold=None, max_threshold=None):
+class Plot:
+    """Represents a plot on the x-y plane.
+    """
+
+    def __init__(self, x, y, name):
+        self.x = x
+        self.y = y
+        self.name = name
+        if not isinstance(x, np.ndarray):
+            self.x = np.array(x)
+        if not isinstance(y, np.ndarray):
+            self.y = np.array(y)
+
+    @staticmethod
+    def from_numpy_mat(mat, name):
+        """Create a plot from a 2-dimensional numpy array.
+
+        Args:
+            mat (numpy.ndarray): Numpy array of shape (2, n) where the first row is the x axis and
+                the second row is the y axis, both of length n.
+            name (str): Name to assign to the Plot.
+
+        Returns:
+            A Plot with the given x, y, and name attributes.
+        """
+        return Plot(mat[0], mat[1], name)
+
+    def to_numpy_mat(self):
+        mat = np.stack((self.x, self.y))
+        return mat
+
+
+def merge_plots(plots, low_threshold=None, high_threshold=None):
     """Merge a list of plots that may have data points with different x values.
 
     The merging is performed by interpolating all the plots on common x values and averaging the
     result.
 
     Args:
-        plots (list): List of numpy arrays where the first row corresponds to the x
-            axis values and the second to the y axis values
+        plots (list): List of Plot objects.
+        low_threshold (float): Plots that have first x value > min_threshold will be skipped.
+        high_threshold (float): Plots that have last x value < min_threshold will be skipped.
 
     Returns:
         A tuple (x, y_avg, var, y_arrays) where:
@@ -26,16 +59,22 @@ def merge_plots(plots, min_threshold=None, max_threshold=None):
             var (numpy.ndarray): Variance for each averaged point.
             y_arrays (list): List of the interpolations.
     """
+    return _merge_plots(
+        [plot.to_numpy_mat() for plot in plots],
+        low_threshold=low_threshold,
+        high_threshold=high_threshold
+    )
+
+
+def _merge_plots(plots, low_threshold=None, high_threshold=None):
     max_min = -np.infty
     min_max = np.infty
     # Taking a window of points from the max of the first x values to the min of the last values
     usable_plots = []
     skipped = 0
     for mat in plots:
-        if min_threshold is not None and mat[0, 0] > min_threshold:
-            skipped += 1
-            continue
-        if max_threshold is not None and mat[0, -1] < max_threshold:
+        if low_threshold is not None and mat[0, 0] > low_threshold \
+                or high_threshold is not None and mat[0, -1] < high_threshold:
             skipped += 1
             continue
         usable_plots.append(mat)
@@ -82,10 +121,42 @@ def plot_average_rewards(exp_dir, starts_with=None):
             np.array([end_steps, rewards])
             for end_steps, rewards in zip(end_steps_list, rewards_list)
         ]
-        x, y_avg, var, y_arrays = merge_plots(plot_list)
+        x, y_avg, var, y_arrays = _merge_plots(plot_list)
         if p_hardcoded_start != p_hardcoded_end:
             label = 'p from ' + str(p_hardcoded_start) + ' to ' + str(p_hardcoded_end)
         else:
             label = 'p = ' + str(p_hardcoded_start)
         plt.plot(x, y_avg, label=label)
     plt.legend()
+
+
+def save_results_json(dir, filename, results):
+    """Save the given dictionary of results into a json file.
+
+    Args:
+        results (dict): Dictionary of results
+    """
+    file_path = os.path.join(dir, filename)
+    assert  not os.path.exists(file_path), 'File ' + str(file_path) + ' already exists!'
+    if not os.path.exists(dir):
+        os.makedirs(dir)
+    with open(file_path, 'w') as fp:
+        json.dump(results, fp)
+
+
+def save_results_numpy(dir, filename, results):
+    """Save the given dictionary of results into a numpy file.
+
+        Args:
+            results (dict): Dictionary of results
+        """
+    file_path = os.path.join(dir, filename)
+    assert not os.path.exists(file_path), 'File ' + str(file_path) + ' already exists!'
+    if not os.path.exists(dir):
+        os.makedirs(dir)
+    np.save(file_path, results)
+
+
+def read_result_numpy(dir, file):
+    res = np.load(os.path.join(dir, file), allow_pickle=True)
+    return res.item()
