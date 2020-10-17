@@ -7,6 +7,7 @@ from matplotlib import pyplot as plt
 
 
 EXPERIMENT_RESULT_DIR = 'experiment_results'
+TD3_RESULTS_DIR = os.path.join(EXPERIMENT_RESULT_DIR) + 'td3'
 
 
 class Plot:
