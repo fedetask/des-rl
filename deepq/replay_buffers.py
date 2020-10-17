@@ -183,25 +183,15 @@ class PrioritizedReplayBuffer(FIFOReplayBuffer):
 # ----------------------------------------- PREFILLERS --------------------------------------------#
 
 
-class UniformGymPrefiller:
+class BufferPrefiller:
     """Prefiller that adds transitions to the replay buffer by sampling random actions from a Gym
     environment.
     """
 
-    def fill(
-            self,
-            replay_buffer,
-            env,
-            num_transitions,
-            add_info=False,
-            shuffle=False,
-            prioritized_replay=False
-    ):
+    def fill(self, replay_buffer, env, num_transitions, add_info=False, shuffle=False,
+            prioritized_replay=False, collection_policy=None):
         """Add the given number of transitions to the replay buffer by sampling
         random actions in the given environment.
-
-        A transition is intended in the form (s, a, r, s', [info]) where s' is None if the episode
-        ended. Remember to call reset() on the environment after using this function.
 
         Args:
             replay_buffer (BaseReplayBuffer): A replay buffer implementation.
@@ -211,12 +201,17 @@ class UniformGymPrefiller:
             shuffle (bool): Whether to shuffle the replay buffer after sampling the given number
                 of transitions.
             prioritized_replay (bool): Whether to add an additional element w to the sampled
-                transitions for prioritized replay buffers. w is set as 1 /num_transitions.
+                transitions for prioritized replay buffers. w is set as 1 / num_transitions.
                 if prioritized_replay is True, the transition will be (s, a, r, s', w, [info]).
+            collection_policy: Function (numpy.ndarray) -> numpy.ndarray that returns an action
+                for a given state. Will be used to collect transitions.
         """
         s = env.reset()
         for step in range(num_transitions):
-            a = env.action_space.sample()
+            if collection_policy is None:
+                a = env.action_space.sample()
+            else:
+                a = collection_policy(s)
             s_prime, r, done, info = env.step(a)
             s_prime = s_prime if not done else None
 
