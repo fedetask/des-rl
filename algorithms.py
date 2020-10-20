@@ -21,7 +21,7 @@ class TD3:
                  update_targets_every=2, tau=0.005, target_noise=0.2, target_noise_clip=0.5,
                  epsilon_start=0.15, epsilon_end=0.05, epsilon_decay_schedule='exp',
                  helper_policy=None, helper_start_p=0.5, helper_end_p=0.05,
-                 helper_schedule='lin', dtype=torch.float, evaluate_every=2500,
+                 helper_schedule='lin', dtype=torch.float, evaluate_every=-1,
                  evaluation_episodes=5):
         """Instantiate the TD3 algorithm.
 
@@ -175,7 +175,7 @@ class TD3:
                         str(eval_avg_rewards[-1])
 
                 # Evaluate
-                if step >= next_eval:
+                if step >= next_eval and self._evaluate_every > 0:
                     eval_avg_rewards.append(
                         self.evaluate(env, self._evaluation_episodes)
                     )
