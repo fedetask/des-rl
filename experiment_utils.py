@@ -7,7 +7,8 @@ from matplotlib import pyplot as plt
 
 
 EXPERIMENT_RESULT_DIR = 'experiment_results'
-TD3_RESULTS_DIR = os.path.join(EXPERIMENT_RESULT_DIR) + 'td3'
+TD3_RESULTS_DIR = os.path.join(EXPERIMENT_RESULT_DIR, 'td3')
+PENDULUM_TD3_RESULTS_DIR = os.path.join(TD3_RESULTS_DIR, 'pendulum')
 
 
 class Plot:
