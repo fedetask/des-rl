@@ -31,25 +31,35 @@ class BasePretrainer(abc.ABC):
         """
         states = np.empty((collection_steps, *env.observation_space.shape))
         actions = np.empty((collection_steps, *env.action_space.shape))
-        returns = np.empty((collection_steps, 1))
+        rewards = np.empty((collection_steps, 1))
+        next_states = np.empty((collection_steps, *env.observation_space.shape))
+        dones = np.empty((collection_steps, 1))
+        real_returns = np.empty((collection_steps, 1))
         episode_rewards = []
         state = env.reset()
         for step in range(collection_steps):
             action = collection_policy(state)
             states[step] = state
             actions[step] = action
-            state, r, done, info = env.step(action)
+            next_state, r, done, info = env.step(action)
+            rewards[step] = r
+            next_states[step] = next_state
+            dones[step] = float(done)
             episode_rewards.append(r)
+            state = next_state
             if done:
                 state = env.reset()
                 total_returns = common.compute_real_targets(episode_rewards, df)
                 total_returns = np.expand_dims(total_returns, 1)
-                returns[step - total_returns.shape[0] + 1: step + 1] = total_returns
+                real_returns[step - total_returns.shape[0] + 1: step + 1] = total_returns
                 episode_rewards = []
         states = torch.from_numpy(states).type(dtype)
         actions = torch.from_numpy(actions).type(dtype)
-        returns = torch.from_numpy(returns).type(dtype)
-        return states, actions, returns
+        rewards = torch.from_numpy(rewards).type(dtype)
+        dones = torch.from_numpy(dones).type(dtype)
+        next_states = torch.from_numpy(next_states).type(dtype)
+        real_returns = torch.from_numpy(real_returns).type(dtype)
+        return states, actions, rewards, next_states, dones, real_returns
 
     def sample_batch(self, batch_size, tensors):
         """Sample from the given tensors by sampling a list of indices and returning the
@@ -111,9 +121,9 @@ class ActorCriticPretrainer(BasePretrainer):
     """
 
     def __init__(self, env, actor, collection_policy, collection_steps, training_steps, critic=None,
-                 actor_stop_steps=-1,  batch_size=128, actor_optimizer=None,
-                 critic_optimizer=None, actor_lr=1e-3, critic_lr=0.5e-3,
-                 actor_loss=torch.nn.MSELoss(), critic_loss=torch.nn.MSELoss(),
+                 actor_stop_steps=-1,  batch_size=128, bootstrap_critic=True,
+                 actor_optimizer=None, critic_optimizer=None, df=0.99, actor_lr=1e-3,
+                 critic_lr=0.5e-3, actor_loss=torch.nn.MSELoss(), critic_loss=torch.nn.MSELoss(),
                  evaluate_every=500, eval_episodes=20, dtype=torch.float):
         """Create the pretrainer for the actor critic networks.
 
@@ -128,6 +138,8 @@ class ActorCriticPretrainer(BasePretrainer):
             critic (torch.nn.Module): Critic to be trained. Leave None for only actor training.
             actor_stop_steps (int): If > 0, the actor training will be stopped at actor_stop_steps.
             batch_size (int): Size of a sampled batch.
+            bootstrap_critic (bool): Whether to use bootstrapped estimates of the returns,
+                or to use the actual total discounted return when training the critic.
             actor_optimizer (torch.optim.Optimizer): Optimizer to train the actor. If None,
                 Adam with the given actor_lr will be used.
             critic_optimizer (torch.optim.Optimizer): Optimizer to train the actor. If None,
@@ -148,6 +160,8 @@ class ActorCriticPretrainer(BasePretrainer):
         self.training_steps = training_steps
         self.actor_stop_steps = actor_stop_steps
         self.batch_size = batch_size
+        self.bootstrap_critic = bootstrap_critic
+        self.df = df
         self.actor_optimizer = actor_optimizer
         self.critic_optimizer = critic_optimizer
         self.actor_loss = actor_loss
@@ -175,8 +189,8 @@ class ActorCriticPretrainer(BasePretrainer):
                                  # corresponding to eval_steps.
             }
         """
-        states_dataset, actions_dataset, return_dataset = self._collect_experience(
-            self.env, df=0.99, collection_steps=self.collection_steps,
+        states, actions, rewards, next_states, dones, tot_returns = self._collect_experience(
+            self.env, df=self.df, collection_steps=self.collection_steps,
             collection_policy=self.collection_policy, dtype=self.dtype)
         actor_losses = []
         critic_losses = []
@@ -184,18 +198,23 @@ class ActorCriticPretrainer(BasePretrainer):
         eval_scores = []
         training_range = tqdm.trange(self.training_steps, leave=True)
         for step in training_range:
-            state_batch, action_batch, return_batch = self.sample_batch(
-                self.batch_size, (states_dataset, actions_dataset, return_dataset)
-            )
+            state_batch, action_batch, reward_batch, next_states_batch, dones_batch, return_batch \
+                = self.sample_batch(
+                    self.batch_size, (states, actions, rewards, next_states, dones, tot_returns)
+                )
             if self.actor_stop_steps < 0 or step < self.actor_stop_steps:
                 predicted_actions = self.actor(state_batch)
                 actor_loss = self._train_net(
-                predicted_actions, action_batch, self.actor_loss, self.actor_optimizer)
+                    predicted_actions, action_batch, self.actor_loss, self.actor_optimizer)
                 actor_losses.append(actor_loss)
             if self.critic is not None:
                 predicted_values = self.critic(state_batch, action_batch)
+                if self.bootstrap_critic:
+                    targets = self._bootstrap_targets(reward_batch, next_states_batch, dones_batch)
+                else:
+                    targets = return_batch
                 critic_loss = self._train_net(
-                    predicted_values, return_batch, self.critic_loss, self.critic_optimizer)
+                    predicted_values, targets, self.critic_loss, self.critic_optimizer)
                 training_range.set_description(
                     'Actor loss: ' + str(actor_loss) + ' critic loss: ' + str(critic_loss))
                 critic_losses.append(critic_loss)
@@ -212,6 +231,13 @@ class ActorCriticPretrainer(BasePretrainer):
             'eval_steps': np.array(eval_steps),
             'eval_scores': np.array(eval_scores)
         }
+
+    def _bootstrap_targets(self, rewards, next_states, dones):
+        next_states_np = next_states.detach().numpy()
+        actions = torch.tensor([self.collection_policy(s) for s in next_states_np])
+        with torch.no_grad():
+            targets = self.critic(next_states, actions)
+        return rewards + dones * self.df * targets
 
 
 if __name__ == '__main__':
