@@ -15,7 +15,7 @@ class ParameterUpdater:
     where alpha and beta are set such that param(0) = start and param(n_steps) = end.
     """
 
-    VALID_SCHEDULES = ['cons', 'lin', 'exp']
+    VALID_SCHEDULES = ['const', 'lin', 'exp']
 
     def __init__(self, start, end, n_steps, update_schedule='lin'):
         """Create the ParameterUpdater.
@@ -28,23 +28,36 @@ class ParameterUpdater:
         """
         assert update_schedule in ParameterUpdater.VALID_SCHEDULES,\
             'The given schedule is not understood. Use ' + str(ParameterUpdater.VALID_SCHEDULES)
+        if update_schedule == 'const':
+            assert start == end, 'Constant schedule requires start==end.'
+        if update_schedule == 'exp' and (start < 0 or end < 0):
+            raise NotImplementedError('Exponential decay for negative values not implemented yet.')
         self.start = start
         self.end = end
         self.n_steps = n_steps
         self.update_schedule = update_schedule
         self.cur_value = start
         self.step = 0
+        self.decreasing = start > end
 
     def update(self):
         """Perform one update step of the parameter, i.e. updating it from param(t) to param(t+1).
+
+        Every update() call outside the given steps range will set the value to the given end value.
         """
         if self.update_schedule == 'const':
             pass
         elif self.update_schedule == 'lin':
-            self.cur_value = self.start - self.step * (self.start - self.end) / self.n_steps
+            self.cur_value = self.start - (self.step + 1) * (self.start - self.end) / self.n_steps
         elif self.update_schedule == 'exp':
-            beta = (-1. / self.n_steps) * np.log(float(self.end / self.start))
-            self.cur_value = self.start * np.exp(-beta * self.step)
+            beta = (-1. / self.n_steps) * np.log(self.end / self.start)
+            self.cur_value = self.start * np.exp(-beta * (self.step + 1))
+        else:
+            raise ValueError(
+                'The given update schedule \'' + str(self.update_schedule) + '\' is not understood.'
+            )
+        if self.step >= self.n_steps:
+            self.cur_value = self.end
         self.step += 1
 
     def get_value(self):
