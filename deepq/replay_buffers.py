@@ -157,7 +157,9 @@ class PrioritizedReplayBuffer(FIFOReplayBuffer):
             size (int): Number of transitions to sample.
 
         Returns:
-            A list of the sampled transitions.
+            A tuple (transitions, info) where transitions is a list of the sampled transitions and
+            info is a dictionary {'weights':  weights} with weights being the normalized weights
+            of the sampled transitions.
         """
         if size > len(self.buffer):
             raise ValueError(
