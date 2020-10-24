@@ -25,7 +25,7 @@ import pretrainers
 import algorithms
 import experiment_utils
 import hardcoded_policies
-
+import common
 
 PRETRAIN_ACTOR_RL = 1e-3
 PRETRAIN_CRITIC_RL = 1e-3
@@ -55,7 +55,8 @@ def get_actor_critic(state_len, action_len, max_action):
 
 def train_from_pretrained_actor(env: gym.Env, collection_policy, pretrain_steps, train_steps,
                                 buffer_prefill_steps, num_runs, buffer_prefill_from_policy=False,
-                                train_critic=False, bootstrap_critic=True, actor_delay=0):
+                                train_critic=False, bootstrap_critic=True, actor_delay=0,
+                                beta_start=1e-6, beta_schedule='lin', beta_steps=0):
     """This experiment pre-trains the actor network (and optionally the critic), then runs the TD3
     algorithm using the pre-trained actor (critic).
 
@@ -73,16 +74,9 @@ def train_from_pretrained_actor(env: gym.Env, collection_policy, pretrain_steps,
         train_critic (bool): Whether to train the critic.
         bootstrap_critic (bool): Whether to use bootstrapped estimates when pretraining the critic.
         actor_delay (int): Number of steps to wait before training the actor.
-
-    Returns:
-        A dictionary with resulting scores. Each element is a list of (2, n) numpy array where
-        the second row contains the scores, and the first row the corresponding time steps.
-        {
-            'pretrain_scores': Scores collected during pre-training
-            'train_scores': Scores collected during training
-            'train_eval_scores': Evaluation scores collected during training
-        }
-
+        beta_start (float): Initial value of beta.
+        beta_schedule (str): Update schedule of beta.
+        beta_steps (int): Number of steps in which beta is increased from beat_start to 1.
     """
     exp_name = collection_policy.__name__ + '_' + train_from_pretrained_actor.__name__
     if train_critic:
@@ -91,6 +85,8 @@ def train_from_pretrained_actor(env: gym.Env, collection_policy, pretrain_steps,
         exp_name += '_delay_actor_' + str(actor_delay)
     if buffer_prefill_from_policy:
         exp_name += '_prefill_from_policy'
+    if beta_steps > 0:
+        exp_name += '_beta_' + str(beta_schedule) + '_' + str(beta_start) + '_' + str(beta_steps)
     if os.path.exists(os.path.join(experiment_utils.PENDULUM_TD3_RESULTS_DIR, exp_name + '.npy')):
         warn = 'Warning: ' + str(exp_name) + ' already exists. Skipping.'
         print(warn)
@@ -110,6 +106,12 @@ def train_from_pretrained_actor(env: gym.Env, collection_policy, pretrain_steps,
 
         actor, critic = get_actor_critic(state_len, action_len, max_action)
 
+        if beta_steps > 0:
+            beta_updater = common.ParameterUpdater(
+                start=beta_start, end=1., n_steps=beta_steps, update_schedule=beta_schedule)
+        else:
+            beta_updater = None
+
         # Pretrain actor and critic
         pretrainer = pretrainers.ActorCriticPretrainer(
             env=env, actor=actor, collection_policy=collection_policy,
@@ -122,7 +124,7 @@ def train_from_pretrained_actor(env: gym.Env, collection_policy, pretrain_steps,
         td3 = algorithms.TD3(critic, actor, training_steps=train_steps, max_action=max_action,
                              min_action=-max_action, critic_lr=RL_CRITIC_LR,
                              actor_lr=RL_CRITIC_LR, evaluate_every=-1,  # No eval
-                             actor_start_train_at=actor_delay)
+                             actor_start_train_at=actor_delay, actor_beta=beta_updater)
         train_res = td3.train(env, buffer_prefill_steps)
 
         pretrain_scores.append(experiment_utils.Plot(
@@ -216,7 +218,6 @@ def plot_experiment_1(dir, exp_results_filename, standard_training_filename, off
 
 def run_experiments(train_standard=False):
     env = gym.make('Pendulum-v0')
-
     num_runs = 10
     buffer_prefill_steps = 5000  # Small to make policy actions count
     pretrain_steps = 5000
@@ -248,9 +249,42 @@ def run_experiments(train_standard=False):
                     buffer_prefill_from_policy=prefill_from_policy,
                     train_critic=train_critic,
                     actor_delay=actor_delay,
-                    bootstrap_critic=True
+                    bootstrap_critic=True,
                 )
                 warnings.append(warn)
+    for warn in warnings:
+        print(warn)
+
+
+def run_beta_experiments():
+    env = gym.make('Pendulum-v0')
+    num_runs = 10
+    buffer_prefill_steps = 5000  # Small to make policy actions count
+    pretrain_steps = 5000
+    train_steps = 15000
+
+    schedules = ['exp', 'lin']
+    beta_steps = [250, 500, 1000]  # Actual steps are 2x since actor is trained every two
+    actor_delays = [0, 1000, 1500]
+
+    warnings = []
+    for beta_step in beta_steps:
+        for schedule in schedules:
+            for actor_delay in actor_delays:
+                warn = train_from_pretrained_actor(
+                    env,
+                    hardcoded_policies.pendulum,
+                    pretrain_steps=pretrain_steps,
+                    train_steps=train_steps,
+                    buffer_prefill_steps=buffer_prefill_steps,
+                    num_runs=num_runs,
+                    buffer_prefill_from_policy=False,
+                    train_critic=False,
+                    actor_delay=actor_delay,
+                    bootstrap_critic=True,
+                    beta_schedule=schedule,
+                    beta_steps=beta_step
+                )
     for warn in warnings:
         print(warn)
 
@@ -281,11 +315,8 @@ def plot(max_in_plot=2, always_plot='standard_training.npy', cut_pretrain_at=150
 
 
 if __name__ == '__main__':
-    run_experiments()
-    only_files = [
-        'pendulum_train_from_pretrained_actor_critic_bootstrap_delay_actor_5000.npy',
-        'pendulum_train_from_pretrained_actor_critic_bootstrap_delay_actor_5000_prefill_from_policy.npy',
-        'pendulum_train_from_pretrained_actor_delay_actor_5000.npy',
-        'pendulum_train_from_pretrained_actor_delay_actor_5000_prefill_from_policy.npy'
-    ]
-    plot(only_files=only_files, max_in_plot=100)
+    #run_experiments()
+    run_beta_experiments()
+    plot_only = os.listdir(experiment_utils.PENDULUM_TD3_RESULTS_DIR)
+    plot_only = [p for p in plot_only if 'beta_lin' in p]
+    plot(max_in_plot=100, only_files=plot_only)
