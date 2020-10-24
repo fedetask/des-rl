@@ -269,8 +269,8 @@ if __name__ == '__main__':
     pretrainer = ActorCriticPretrainer(
         env=env, actor=actor_net, critic=critic_net, collection_policy=hardcoded_policies.pendulum,
         collection_steps=training_steps, training_steps=training_steps,
-        actor_stop_steps=int(training_steps/2), dtype=torch.float, evaluate_every=500,
-        eval_episodes=10, actor_lr=1e-2, critic_lr=1e-2
+        actor_stop_steps=-1, dtype=torch.float, evaluate_every=500,
+        eval_episodes=10, actor_lr=5e-3, critic_lr=5e-3
     )
 
     res = pretrainer.train()
