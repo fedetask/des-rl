@@ -18,10 +18,10 @@ class TD3:
     def __init__(self, critic_net, actor_net, training_steps=-1, max_action=None, min_action=None,
                  buffer_len=100000, prioritized_replay=False, df=0.99, batch_size=128,
                  critic_lr=0.001, actor_lr=0.001, actor_start_train_at=0, train_actor_every=2,
-                 update_targets_every=2, tau=0.005, target_noise=0.2, target_noise_clip=0.5,
-                 epsilon_start=0.15, epsilon_end=0.05, epsilon_decay_schedule='exp',
-                 helper_policy=None, helper_start_p=0.5, helper_end_p=0.05,
-                 helper_schedule='lin', dtype=torch.float, evaluate_every=-1,
+                 actor_beta=None, update_targets_every=2, tau=0.005, target_noise=0.2,
+                 target_noise_clip=0.5, epsilon_start=0.15, epsilon_end=0.05,
+                 epsilon_decay_schedule='exp', helper_policy=None, helper_start_p=0.5,
+                 helper_end_p=0.05, helper_schedule='lin', dtype=torch.float, evaluate_every=-1,
                  evaluation_episodes=5):
         """Instantiate the TD3 algorithm.
 
@@ -39,6 +39,10 @@ class TD3:
             actor_lr (float): Learning rate for training the actor.
             actor_start_train_at (int): Number of steps until which only the critic will be trained.
             train_actor_every (int): Actor net will be trained once every train_actor_every steps.
+            actor_beta (common.ParameterUpdater): A ParameterUpdater implementation that contains
+                the value of beta, that is multiplied to the actor loss. The update() method is
+                called at each actor training step. A increasing value of beta is useful to not
+                destroy the actor policy when training from a pretrained actor.
             update_targets_every (int): Target nets will be updated once every
                 update_targets_every steps with soft update.
             tau (float): Strength of soft update.
@@ -67,11 +71,11 @@ class TD3:
         self._batch_size = batch_size
         self._actor_start_train_at = actor_start_train_at
         self._train_actor_every = train_actor_every
+        self._actor_beta = actor_beta
         self._update_targets_every = update_targets_every
         self._dtype = dtype
         self._evaluate_every = evaluate_every if evaluate_every > 0 else np.infty
         self._evaluation_episodes = evaluation_episodes
-
         if prioritized_replay:
             self.replay_buffer = replay_buffers.PrioritizedReplayBuffer(buffer_len)
         else:
@@ -95,7 +99,8 @@ class TD3:
             loss=torch.nn.MSELoss(),
             critic_lr=critic_lr,
             actor_lr=actor_lr,
-            dtype=dtype
+            dtype=dtype,
+            actor_beta=self._actor_beta
         )
         self.policy_train = policies.BaseEpsilonGaussianPolicy(
             start_epsilon=epsilon_start, end_epsilon=epsilon_end, decay_steps=training_steps,
@@ -213,28 +218,21 @@ class TD3:
             return
 
         # Sample a batch of transitions and train
-        if self._prioritized_replay:
-            sampled_transitions, weights = self.replay_buffer.sample(self._batch_size)
-        else:
-            sampled_transitions, _ = self.replay_buffer.sample(self._batch_size)
+        sampled_transitions, info = self.replay_buffer.sample(self._batch_size)
         batch = common.split_replay_batch(sampled_transitions)
         targets = self.target_computer.compute_targets(batch)
         train_actor = step_num > self._actor_start_train_at \
             and step_num % self._train_actor_every == 0
+        weights = None
         if self._prioritized_replay:
             self._update_prioritized_buffer(batch, sampled_transitions, targets)
-            train_res = self.trainer.train(
-                batch,
-                targets,
-                train_actor=train_actor,
-                weights=weights
-            )
-        else:
-            train_res = self.trainer.train(
-                batch,
-                targets,
-                train_actor=train_actor,
-            )
+            weights = info['weights']
+        train_res = self.trainer.train(
+            batch,
+            targets,
+            train_actor=train_actor,
+            weights=weights,
+        )
 
         if step_num % self._update_targets_every == 0:
             self.networks.update_actor(mode='soft', tau=self.tau)
