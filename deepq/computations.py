@@ -12,9 +12,10 @@ import abc
 import sys
 import os
 
-import numpy as np
 import torch
 from torch.nn import functional as F
+from torch.optim import lr_scheduler
+import numpy as np
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import common
@@ -318,6 +319,7 @@ class TD3Trainer(BaseTrainer):
                  actor_optimizer=None,
                  critic_lr=0.5e-3,
                  actor_lr=0.5e-3,
+                 actor_beta=None,
                  dtype=torch.float):
         """Instantiate the TD3 trainer.
 
@@ -332,11 +334,16 @@ class TD3Trainer(BaseTrainer):
                 If None, an Adam optimizer with the given learning rate will be used.
             critic_lr (float): Learning rate for the critic optimizer when using the default.
             actor_lr (float): Learning rate for the actor optimizer when using the default.
+            actor_beta (common.ParameterUpdater): A parameter updater containing the value of
+                beta, that is multiplied to the actor loss. The update() method is called every
+                training step.
             dtype (torch.dtype): Type used for tensor computations.
         """
         super().__init__(dtype=dtype)
         self.dqac_networks = dqac_networks
         self.loss = loss
+        self.actor_beta = actor_beta
+        self._actor_lr = actor_lr
         if critic_optimizer is None:
             self.critic_optimizer = torch.optim.Adam(
                 dqac_networks.get_trainable_params()[0],
@@ -347,6 +354,13 @@ class TD3Trainer(BaseTrainer):
                 dqac_networks.get_trainable_params()[1],
                 lr=actor_lr
             )
+
+        if self.actor_beta is not None:
+            def update_beta(epoch):
+                lr = self.actor_beta.cur_value
+                self.actor_beta.update()
+                return lr
+            self._actor_lr_scheduler = lr_scheduler.LambdaLR(self.actor_optimizer, update_beta)
 
     def train(self, batch, targets, train_actor=False, weights=None, *args, **kwargs):
         """Perform one optimization step on the critic and actor networks for the given samples.
@@ -362,7 +376,6 @@ class TD3Trainer(BaseTrainer):
                 the batch.
             train_actor (bool): Whether to train the actor network.
             weights (numpy.ndarray): Optional array of weights for the gradient of each sample.
-
         """
         states, actions, rewards, next_states, next_states_idx = batch
         states_ts = torch.tensor(states, dtype=self.dtype)
@@ -370,11 +383,10 @@ class TD3Trainer(BaseTrainer):
         targets_ts = torch.tensor(targets, dtype=self.dtype)
 
         q_values = self.dqac_networks.predict_values(states_ts, actions_ts, mode='all')
+        n_nets = q_values.shape[1]
         # TODO: How to extend to other losses?
         # critic_loss = q_values.size()[1] * self.loss(q_values, targets_ts[:, None, :])
-
-        squared_errors = ((q_values - targets_ts[:, None, :]) ** 2).squeeze().sum(-1) / \
-                         q_values.size()[1]
+        squared_errors = ((q_values - targets_ts[:, None, :]) ** 2).squeeze().sum(-1) / n_nets
         if weights is not None:
             squared_errors *= torch.tensor(weights, dtype=self.dtype)
         critic_loss = q_values.size()[1] * squared_errors.mean()
@@ -389,7 +401,8 @@ class TD3Trainer(BaseTrainer):
             self.actor_optimizer.zero_grad()
             actor_loss.backward()
             self.actor_optimizer.step()
-
+            if self.actor_beta is not None:
+                self._actor_lr_scheduler.step()
         return {
             'critic_loss': float(critic_loss.detach().numpy()),
             'actor_loss': float(actor_loss.detach().numpy()) if actor_loss is not None else None,
