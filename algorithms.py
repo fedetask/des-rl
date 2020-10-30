@@ -199,6 +199,10 @@ class TD3:
                 steps_range.set_description(tqdm_descr)
             else:
                 state = next_state
+        if self._chechpoint_every > 0:
+            common.save_models(
+                models={'actor': self.networks.actor_net, 'critic': self.networks.critic_nets},
+                dir=f'models/{cpk_dir}')
         return {
             'rewards': rewards,
             'end_steps': end_steps,
