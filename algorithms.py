@@ -284,13 +284,15 @@ if __name__ == '__main__':
     import gym
     import networks
     from matplotlib import pyplot as plt
-    import hardcoded_policies
-    device= 'cuda:0' if torch.cuda.is_available() else 'cpu'
 
-    TRAINING_STEPS = 50000
+    device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+
+    ENV_NAME = 'LunarLanderContinuous-v2'
+    TRAIN_STEPS = 50000
     PREFILL_STEPS = 10000
+    SHOW_PLOT = False
 
-    env = gym.make('LunarLanderContinuous-v2')
+    env = gym.make(ENV_NAME)
     action_len = env.action_space.shape[0]
     state_len = env.observation_space.shape[0]
     max_action = env.action_space.high[0]
@@ -318,7 +320,7 @@ if __name__ == '__main__':
         actor_net=actor,
         min_action=-max_action,
         max_action=max_action,
-        training_steps=TRAINING_STEPS,
+        training_steps=TRAIN_STEPS,
         df=0.99,
         batch_size=128,
         critic_lr=5e-4,
@@ -335,23 +337,29 @@ if __name__ == '__main__':
         evaluate_every=-1,
     )
     prefiller = replay_buffers.BufferPrefiller(num_transitions=PREFILL_STEPS)
-    train_result = td3.train(env, )
+    train_result = td3.train(env)
 
-    plt.plot(train_result['end_steps'],
-             train_result['rewards'], label='Cumulative reward')
+    if SHOW_PLOT:
+        plt.plot(train_result['end_steps'],
+                 train_result['rewards'], label='Cumulative reward')
 
-    start_steps = train_result['start_steps']
-    if len(start_steps) != len(train_result['end_steps']):
-        start_steps = start_steps[:-1]
+        start_steps = train_result['start_steps']
+        if len(start_steps) != len(train_result['end_steps']):
+            start_steps = start_steps[:-1]
 
-    plt.plot(train_result['eval_steps'], train_result['eval_scores'],
-             label='Evaluation rewards')
+        plt.plot(train_result['eval_steps'], train_result['eval_scores'],
+                 label='Evaluation rewards')
 
-    plt.legend()
+        plt.legend()
 
-    plt.show()
+        plt.show()
 
     final_eval = td3.evaluate(env, 5)
     print('Final evaluation: ' + str(final_eval))
+
+    common.save_models(
+        models={'actor': actor, 'critic': critic},
+        dir=f'models/{env.unwrapped.spec.id}'
+    )
 
 
