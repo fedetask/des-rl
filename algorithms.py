@@ -16,12 +16,11 @@ import common
 class TD3:
 
     def __init__(self, critic_net, actor_net, training_steps=-1, max_action=None, min_action=None,
-                 buffer_len=100000, prioritized_replay=False, df=0.99, batch_size=128,
-                 critic_lr=0.001, actor_lr=0.001, actor_start_train_at=0, train_actor_every=2,
-                 actor_beta=None, update_targets_every=2, tau=0.005, target_noise=0.2,
-                 target_noise_clip=0.5, epsilon_start=0.15, epsilon_end=0.05,
-                 epsilon_decay_schedule='exp', helper_policy=None, helper_start_p=0.5,
-                 helper_end_p=0.05, helper_schedule='lin', dtype=torch.float, evaluate_every=-1,
+                 backbone_policy=None, buffer_len=100000, prioritized_replay=False, df=0.99,
+                 batch_size=128, critic_lr=0.001, actor_lr=0.001, actor_start_train_at=0,
+                 train_actor_every=2, actor_beta=None, update_targets_every=2, tau=0.005,
+                 target_noise=0.2, target_noise_clip=0.5, epsilon_start=0.15, epsilon_end=0.15,
+                 epsilon_decay_schedule='const', dtype=torch.float, evaluate_every=-1,
                  evaluation_episodes=5):
         """Instantiate the TD3 algorithm.
 
@@ -51,20 +50,14 @@ class TD3:
             epsilon_start (float): Initial stddev of exploration noise.
             epsilon_end (float): Final stddev of exploration noise.
             epsilon_decay_schedule (str): Exploration noise decay schedule 'const', 'lin', or 'exp'.
-            helper_policy: Function (numpy.ndarray) -> numpy.ndarray that returns an action
-                for the given state.
-            helper_start_p (float): Initial probability of taking an action with the helper policy.
-            helper_end_p (float): Final probability of taking an action with the helper policy.
             dtype (torch.dtype): Type to use for all tensor computations.
             evaluate_every (int): The agent will be evaluated once every evaluate_every steps.
             evaluation_episodes (int): Number of episodes to run at each evaluation.
         """
         self.max_action = max_action
         self.min_action = min_action
+        self.backbone_policy = backbone_policy
         self.tau = tau  # Not private, one may want to play with it during training
-        self.helper_policy = helper_policy  # Not private, one may want to change it
-        self.helper_policy_updater = common.ParameterUpdater(  # Not private same reason
-            helper_start_p, helper_end_p, training_steps, helper_schedule)
         self._training_steps = training_steps
         self._prioritized_replay = prioritized_replay
         self._df = df
@@ -74,7 +67,7 @@ class TD3:
         self._actor_beta = actor_beta
         self._update_targets_every = update_targets_every
         self._dtype = dtype
-        self._evaluate_every = evaluate_every if evaluate_every > 0 else np.infty
+        self._evaluate_every = evaluate_every
         self._evaluation_episodes = evaluation_episodes
         if prioritized_replay:
             self.replay_buffer = replay_buffers.PrioritizedReplayBuffer(buffer_len)
@@ -106,16 +99,12 @@ class TD3:
             start_epsilon=epsilon_start, end_epsilon=epsilon_end, decay_steps=training_steps,
             decay_schedule=epsilon_decay_schedule, min_action=min_action, max_action=max_action)
 
-    def train(self, env, buffer_prefill_steps=20000, buffer_collection_policy=None):
+    def train(self, env, buffer_prefiller=None):
         """Perform TD3 training.
 
         Args:
             env (gym.Env): The Gym environment.
-            buffer_prefill_steps (int): Number of transitions to add to replay buffer before
-                starting the training.
-            buffer_collection_policy: Function (numpy.ndarray) -> numpy.ndarray mapping states to
-                actions. If not None, this function will be used to collect transitions.
-
+            buffer_prefiller (deepq.replay_buffers.BufferPrefiller): BufferPrefiller to use
         Returns:
             A dictionary with training statistics:
             {
@@ -142,26 +131,27 @@ class TD3:
         critic_losses = []
         actor_losses = []
 
-        if buffer_prefill_steps > 0:
-            prefiller = replay_buffers.BufferPrefiller()
-            prefiller.fill(
-                self.replay_buffer,
-                env,
-                num_transitions=buffer_prefill_steps,
-                prioritized_replay=self._prioritized_replay,
-                collection_policy=buffer_collection_policy
-            )
+        if buffer_prefiller is not None:
+            buffer_prefiller.fill(self.replay_buffer, env)
 
         next_eval = self._evaluate_every
         episode_rewards = []
         steps_range = tqdm.trange(self._training_steps, leave=True)
         state = env.reset()
         for step in steps_range:
-            action = self._act(state)
+            if self.backbone_policy is not None:
+                action, residual = self._act(state)
+            else:
+                action = self._act(state)
             next_state, reward, done, info = env.step(action)
-            step_res = self.step((state, action, reward, next_state, done), step)
+            if self.backbone_policy is not None:
+                step_res = self.step((state, residual, reward, next_state, done), step)
+            else:
+                step_res = self.step((state, action, reward, next_state, done), step)
 
             episode_rewards.append(reward)
+            if step_res is None:
+                continue
             predicted_target_values.append(step_res['targets'])
             critic_losses.append(step_res['critic_loss'])
             actor_losses.append(step_res['actor_loss'])
@@ -263,18 +253,18 @@ class TD3:
         return float(rewards.mean())
 
     def _act(self, state):
-        if self.helper_policy is not None and np.random.binomial(1, p=self.cur_helper_p):
-            action = self.helper_policy(state)
+        with torch.no_grad():
+            net_action = self.networks.actor_net(
+                torch.tensor(state, dtype=self._dtype).unsqueeze(0))[0]
+        if self.backbone_policy is not None:
+            backbone_action = self.backbone_policy(state)
+            residual = self.policy_train.act(net_action).cpu().numpy()
+            action = (backbone_action + residual).clip(self.min_action, self.max_action)
+            return action, residual
         else:
-            with torch.no_grad():
-                action = self.networks.actor_net(
-                    torch.tensor(state, dtype=self._dtype).unsqueeze(0))[0]
-                action = self.policy_train.act(action).numpy().clip(
-                    self.min_action,
-                    self.max_action
-                )
-        self.helper_policy_updater.update()
-        return action
+            action = self.policy_train.act(net_action).cpu().numpy()
+            action = action.clip(self.min_action, self.max_action)
+            return action
 
     def _td_error(self, states, actions, targets):
         with torch.no_grad():
@@ -296,14 +286,13 @@ if __name__ == '__main__':
     from matplotlib import pyplot as plt
     import hardcoded_policies
 
-    TRAINING_STEPS = 30000
-    PRETRAIN_STEPS = 25000
+    TRAINING_STEPS = 50000
+    PREFILL_STEPS = 10000
 
-    env = gym.make('Pendulum-v0')
-    action_len = 1
-    state_len = 3
-    min_action = -2
-    max_action = 2
+    env = gym.make('LunarLanderContinuous-v2')
+    action_len = env.action_space.shape[0]
+    state_len = env.observation_space.shape[0]
+    max_action = env.action_space.high[0]
 
     critic = networks.LinearNetwork(
         inputs=action_len+state_len,
@@ -326,58 +315,36 @@ if __name__ == '__main__':
     td3 = TD3(
         critic_net=critic,
         actor_net=actor,
-        min_action=min_action,
+        min_action=-max_action,
         max_action=max_action,
         training_steps=TRAINING_STEPS,
-        buffer_len=1000000,
-        prioritized_replay=False,
         df=0.99,
-        batch_size=100,
-        critic_lr=3e-4,
-        actor_lr=3e-4,
+        batch_size=128,
+        critic_lr=5e-4,
+        actor_lr=5e-4,
         train_actor_every=2,
         update_targets_every=2,
         tau=0.005,
         target_noise=0.2,
         target_noise_clip=0.5,
-        epsilon_start=0.1 * max_action,
-        epsilon_end=0.05,
-        epsilon_decay_schedule='lin',
-        helper_policy=hardcoded_policies.pendulum,
-        helper_start_p=1.,
-        helper_end_p=0.0,
-        helper_schedule='const',
+        epsilon_start=0.1,
+        epsilon_end=0.1,
+        epsilon_decay_schedule='const',
         dtype=torch.float,
-        evaluate_every=2000,
-        evaluation_episodes=10,
+        evaluate_every=-1,
     )
-
-    train_result = td3.train(env, buffer_prefill_steps=PRETRAIN_STEPS)
+    prefiller = replay_buffers.BufferPrefiller(num_transitions=PREFILL_STEPS)
+    train_result = td3.train(env, )
 
     plt.plot(train_result['end_steps'],
              train_result['rewards'], label='Cumulative reward')
-    plt.plot(range(TRAINING_STEPS), train_result['predicted_targets'],
-             label='Predicted target value')
 
     start_steps = train_result['start_steps']
     if len(start_steps) != len(train_result['end_steps']):
         start_steps = start_steps[:-1]
 
-    plt.plot(start_steps, train_result['real_targets'],
-             label='Real target value')
-
     plt.plot(train_result['eval_steps'], train_result['eval_scores'],
              label='Evaluation rewards')
-
-    # Plotting actor loss
-    actor_loss = train_result['actor_loss']
-    for i in range(len(actor_loss)):
-        j = 0
-        while i + j < len(actor_loss) - 1 and actor_loss[i + j] is None:
-            j += 1
-        actor_loss[i] = actor_loss[i + j]
-    actor_loss[-1] = actor_loss[-2] if actor_loss[-1] is None else actor_loss[-1]
-    plt.plot(range(TRAINING_STEPS), actor_loss, label='Actor mean loss')
 
     plt.legend()
 
@@ -385,3 +352,5 @@ if __name__ == '__main__':
 
     final_eval = td3.evaluate(env, 5)
     print('Final evaluation: ' + str(final_eval))
+
+
