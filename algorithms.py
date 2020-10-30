@@ -258,11 +258,11 @@ class TD3:
                 torch.tensor(state, dtype=self._dtype).unsqueeze(0))[0]
         if self.backbone_policy is not None:
             backbone_action = self.backbone_policy(state)
-            residual = self.policy_train.act(net_action).cpu().numpy()
+            residual = self.policy_train.act(net_action).detach().cpu().numpy()
             action = (backbone_action + residual).clip(self.min_action, self.max_action)
             return action, residual
         else:
-            action = self.policy_train.act(net_action).cpu().numpy()
+            action = self.policy_train.act(net_action).detach().cpu().numpy()
             action = action.clip(self.min_action, self.max_action)
             return action
 
