@@ -1,5 +1,6 @@
 import os
 
+import common
 import gym
 import torch
 from torch.nn import functional as F
@@ -56,7 +57,7 @@ def train_with_backbone(env: gym.Env, train_steps, num_runs, backbone_policy, ex
         backbone_policy: The policy that will be used as a backbone.
         exp_name_prefix (str): Prefix to be added to experiment name.
     """
-    exp_name = exp_name_prefix + 'backbone_policy'
+    exp_name = exp_name_prefix + backbone_policy.__name__
     if os.path.exists(os.path.join(BACKBONE_RESULTS_DIR, exp_name + '.npy')):
         warn = 'Warning: ' + str(exp_name) + ' already exists. Skipping.'
         print(warn)
@@ -192,9 +193,12 @@ def plot(dir, max_in_plot=2, always_plot='standard_training.npy', cut_pretrain_a
 
 
 if __name__ == '__main__':
-    env = gym.make('Pendulum-v0')
+    env = gym.make('LunarLanderContinuous-v0')
+    models = common.load_models('models/LunarLanderContinuous-v2')
+    _actor = models['actor']
+
     train_with_backbone(
-        env=env, train_steps=TRAINING_STEPS, num_runs=5, backbone_policy=BACKBONE_POLICY)
+        env=env, train_steps=TRAINING_STEPS, num_runs=5, backbone_policy=model_policy)
 
     standard = experiment_utils.read_result_numpy(experiment_utils.PENDULUM_TD3_RESULTS_DIR,
                                                   'standard_training.npy')
@@ -207,4 +211,3 @@ if __name__ == '__main__':
     plt.plot(backbone_x, backbone_y, label='backbone')
     plt.legend()
     plt.show()
-
