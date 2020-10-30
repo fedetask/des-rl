@@ -1,6 +1,8 @@
+import time
+
 import gym
 import numpy as np
-import time
+import torch
 
 
 def cartpole_naive(obs):
@@ -91,7 +93,13 @@ def eval_policy(policy, env, test_episodes=100, render=False, wait_key=False):
             if policy == 'random':
                 action = env.action_space.sample()
             else:
-                action = policy(state)
+                if isinstance(policy, torch.nn.Module):
+                    with torch.no_grad():
+                        action = policy(
+                            torch.tensor(state).unsqueeze(0).float()
+                        )[0].detach().numpy()
+                else:
+                    action = policy(state)
             next_state, rew, done, info = env.step(action)
             if render:
                 env.render()
