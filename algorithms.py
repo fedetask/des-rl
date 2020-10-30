@@ -316,16 +316,16 @@ if __name__ == '__main__':
     critic = networks.LinearNetwork(
         inputs=action_len+state_len,
         outputs=1,
-        n_hidden_layers=2,
-        n_hidden_units=256,
+        n_hidden_layers=4,
+        n_hidden_units=128,
         activation=F.relu
     ).to(device)
 
     actor = networks.LinearNetwork(
         inputs=state_len,
         outputs=action_len,
-        n_hidden_layers=2,
-        n_hidden_units=256,
+        n_hidden_layers=4,
+        n_hidden_units=128,
         activation=F.relu,
         activation_last_layer=torch.tanh,
         output_weight=max_action
