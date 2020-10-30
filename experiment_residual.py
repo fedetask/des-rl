@@ -101,13 +101,12 @@ def train_with_backbone(env: gym.Env, train_steps, num_runs, backbone_policy, ex
     experiment_utils.save_results_numpy(BACKBONE_RESULTS_DIR, exp_name, data_dict)
 
 
-def standard_training(env, train_steps, buffer_prefill_steps, num_runs):
+def standard_training(env, train_steps, num_runs):
     """Perform standard training with TD3. and saves the results.
 
     Args:
         env (gym.Env): The gym environment.
         train_steps (int): Number of training steps.
-        buffer_prefill_steps (int): Number of samples to fill the buffer with before training.
         num_runs (int): Number of runs.
     """
     state_len = env.observation_space.shape[0]
@@ -193,12 +192,20 @@ def plot(dir, max_in_plot=2, always_plot='standard_training.npy', cut_pretrain_a
 
 
 if __name__ == '__main__':
-    env = gym.make('LunarLanderContinuous-v0')
+    env = gym.make('LunarLanderContinuous-v2')
     models = common.load_models('models/LunarLanderContinuous-v2')
     _actor = models['actor']
 
+    def model_policy(state):
+        with torch.no_grad():
+            action = _actor(
+                torch.tensor(state).unsqueeze(0).float()
+            )[0].detach().numpy()
+        return action
+
+    standard_training(env, train_steps=TRAINING_STEPS, num_runs=10)
     train_with_backbone(
-        env=env, train_steps=TRAINING_STEPS, num_runs=5, backbone_policy=model_policy)
+        env=env, train_steps=TRAINING_STEPS, num_runs=10, backbone_policy=model_policy)
 
     standard = experiment_utils.read_result_numpy(experiment_utils.PENDULUM_TD3_RESULTS_DIR,
                                                   'standard_training.npy')
