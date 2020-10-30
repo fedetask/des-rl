@@ -285,6 +285,7 @@ if __name__ == '__main__':
     import networks
     from matplotlib import pyplot as plt
     import hardcoded_policies
+    device= 'cuda:0' if torch.cuda.is_available() else 'cpu'
 
     TRAINING_STEPS = 50000
     PREFILL_STEPS = 10000
@@ -300,7 +301,7 @@ if __name__ == '__main__':
         n_hidden_layers=1,
         n_hidden_units=256,
         activation=F.relu
-    )
+    ).to(device)
 
     actor = networks.LinearNetwork(
         inputs=state_len,
@@ -310,7 +311,7 @@ if __name__ == '__main__':
         activation=F.relu,
         activation_last_layer=torch.tanh,
         output_weight=max_action
-    )
+    ).to(device)
 
     td3 = TD3(
         critic_net=critic,
