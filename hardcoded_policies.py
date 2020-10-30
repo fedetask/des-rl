@@ -1,3 +1,4 @@
+import argparse
 import time
 
 import gym
@@ -112,4 +113,16 @@ def eval_policy(policy, env, test_episodes=100, render=False, wait_key=False):
 
 
 if __name__ == '__main__':
-    pass
+    import common
+    import os
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model', action='store', type=str, nargs=1, required=True)
+    parser.add_argument('--env', action='store', type=str, nargs=1, required=True)
+    args = parser.parse_args()
+
+    _env = gym.make(args.env[0])
+    _actor = torch.load(args.model[0], 'cpu')
+
+    res = eval_policy(_actor, _env)
+    print(f'Mean test reward: {res.mean()}')
