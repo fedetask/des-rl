@@ -12,8 +12,7 @@ import itertools
 from deepq import computations, deepqnetworks, policies, replay_buffers
 import common
 
-device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-
+device = 'cpu'
 
 class TD3:
 
