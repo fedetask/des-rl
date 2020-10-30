@@ -190,14 +190,12 @@ class BufferPrefiller:
     environment.
     """
 
-    def fill(self, replay_buffer, env, num_transitions, add_info=False, shuffle=False,
-            prioritized_replay=False, collection_policy=None):
-        """Add the given number of transitions to the replay buffer by sampling
-        random actions in the given environment.
+    def __init__(self, num_transitions, add_info=False, shuffle=False, prioritized_replay=False,
+                 collection_policy=None, collection_policy_noise=None, min_action=None,
+                 max_action=None, use_residual=False):
+        """Instantiate the buffer prefiller.
 
         Args:
-            replay_buffer (BaseReplayBuffer): A replay buffer implementation.
-            env (gym.core.Env): A Gym environment.
             num_transitions (int): Number of transitions to be added to the replay buffer.
             add_info (bool): Whether to append the additional information to the transitions.
             shuffle (bool): Whether to shuffle the replay buffer after sampling the given number
@@ -207,25 +205,59 @@ class BufferPrefiller:
                 if prioritized_replay is True, the transition will be (s, a, r, s', w, [info]).
             collection_policy: Function (numpy.ndarray) -> numpy.ndarray that returns an action
                 for a given state. Will be used to collect transitions.
+            collection_policy_noise (float): Standard deviation of noise added to actions
+                selected by the collection_policy.
+        """
+        self.num_transitions = num_transitions
+        self.add_info = add_info
+        self.shuffle = shuffle
+        self.prioritized_replay = prioritized_replay
+        self.collection_policy = collection_policy
+        self.collection_policy_noise = collection_policy_noise
+        self.min_action = min_action
+        self.max_action = max_action
+        self.use_residual = use_residual
+        if collection_policy_noise is not None:
+            assert min_action is not None and max_action is not None,\
+                'Min and max action bust be specified when adding collection policy noise.'
+        else:
+            assert not use_residual and collection_policy_noise is None, \
+                'use_residual and collection_policy_noise can only be used together with a ' \
+                'collection policy.'
+
+    def fill(self, replay_buffer, env):
+        """Add the given number of transitions to the replay buffer by sampling
+        random actions in the given environment.
+
+        Args:
+            replay_buffer (BaseReplayBuffer): A replay buffer implementation.
+            env (gym.core.Env): A Gym environment.
         """
         s = env.reset()
-        for step in range(num_transitions):
-            if collection_policy is None:
+        for step in range(self.num_transitions):
+            if self.collection_policy is None:
                 a = env.action_space.sample()
             else:
-                a = collection_policy(s)
+                a = self.collection_policy(s)
+                if self.collection_policy_noise is not None:
+                    noise = np.random.normal(
+                        0, self.collection_policy_noise, env.action_space.shape)
+                    a = (a + noise).clip(self.min_action, self.max_action)
             s_prime, r, done, info = env.step(a)
             s_prime = s_prime if not done else None
 
-            transition = [s, a, r, s_prime]
-            if prioritized_replay:
-                transition.append(1. / num_transitions)
-            if add_info:
+            if self.use_residual:
+                transition = [s, noise, r, s_prime]
+            else:
+                transition = [s, a, r, s]
+            if self.prioritized_replay:
+                transition.append(1. / self.num_transitions)
+            if self.add_info:
                 transition.append(info)
             replay_buffer.remember(transition)
             if done:
                 s = env.reset()
             else:
                 s = s_prime
-        if shuffle:
+        if self.shuffle:
             random.shuffle(replay_buffer)
