@@ -26,6 +26,7 @@ import algorithms
 import experiment_utils
 import hardcoded_policies
 import common
+from deepq import replay_buffers
 
 PRETRAIN_ACTOR_RL = 1e-3
 PRETRAIN_CRITIC_RL = 1e-3
@@ -56,7 +57,8 @@ def get_actor_critic(state_len, action_len, max_action):
 def train_from_pretrained_actor(env: gym.Env, collection_policy, pretrain_steps, train_steps,
                                 buffer_prefill_steps, num_runs, buffer_prefill_from_policy=False,
                                 train_critic=False, bootstrap_critic=True, actor_delay=0,
-                                beta_start=1e-6, beta_schedule='lin', beta_steps=0):
+                                beta_start=1e-6, beta_schedule='lin', beta_steps=0,
+                                prevent_extrapolation=True):
     """This experiment pre-trains the actor network (and optionally the critic), then runs the TD3
     algorithm using the pre-trained actor (critic).
 
@@ -87,6 +89,10 @@ def train_from_pretrained_actor(env: gym.Env, collection_policy, pretrain_steps,
         exp_name += '_prefill_from_policy'
     if beta_steps > 0:
         exp_name += '_beta_' + str(beta_schedule) + '_' + str(beta_start) + '_' + str(beta_steps)
+    if prevent_extrapolation:
+        exp_name += '_prevent_extrapolation'
+    else:
+        raise NotImplementedError('Not implemented no critic trick in pretrainer yet.')
     if os.path.exists(os.path.join(experiment_utils.PENDULUM_TD3_RESULTS_DIR, exp_name + '.npy')):
         warn = 'Warning: ' + str(exp_name) + ' already exists. Skipping.'
         print(warn)
@@ -117,7 +123,9 @@ def train_from_pretrained_actor(env: gym.Env, collection_policy, pretrain_steps,
             env=env, actor=actor, collection_policy=collection_policy,
             collection_steps=pretrain_steps, training_steps=pretrain_steps,
             critic=critic if train_critic else None, actor_lr=PRETRAIN_ACTOR_RL,
-            critic_lr=PRETRAIN_CRITIC_RL, bootstrap_critic=bootstrap_critic)
+            critic_lr=PRETRAIN_CRITIC_RL, prevent_extrapolation=prevent_extrapolation,
+            evaluate_every=200, eval_episodes=2
+        )
         pretrain_res = pretrainer.train()
 
         # Train
@@ -174,7 +182,8 @@ def standard_training(env, train_steps, buffer_prefill_steps, num_runs):
         td3 = algorithms.TD3(critic, actor, training_steps=train_steps, max_action=max_action,
                              min_action=-max_action, critic_lr=RL_CRITIC_LR, actor_lr=RL_ACTOR_LR,
                              evaluate_every=-1)
-        train_res = td3.train(env, buffer_prefill_steps)
+        prefiller = replay_buffers.BufferPrefiller(num_transitions=buffer_prefill_steps)
+        train_res = td3.train(env, prefiller)
         train_scores.append(experiment_utils.Plot(
             train_res['end_steps'], train_res['rewards'], name='train'))
         train_eval_scores.append(experiment_utils.Plot(
@@ -314,9 +323,30 @@ def plot(max_in_plot=2, always_plot='standard_training.npy', cut_pretrain_at=150
             plt.show()
 
 
+def test_adaptive_critic():
+    env = gym.make('Pendulum-v0')
+    num_runs = 10
+    buffer_prefill_steps = 5000  # Small to make policy actions count
+    pretrain_steps = 2000
+    train_steps = 15000
+    train_from_pretrained_actor(
+        env,
+        hardcoded_policies.pendulum,
+        pretrain_steps=pretrain_steps,
+        train_steps=train_steps,
+        buffer_prefill_steps=buffer_prefill_steps,
+        num_runs=num_runs,
+        buffer_prefill_from_policy=False,
+        train_critic=True,
+        actor_delay=0,
+        bootstrap_critic=True,
+        beta_steps=-1,
+        prevent_extrapolation=True
+    )
+
+
 if __name__ == '__main__':
-    #run_experiments()
-    run_beta_experiments()
+    run_experiments(True)
     plot_only = os.listdir(experiment_utils.PENDULUM_TD3_RESULTS_DIR)
-    plot_only = [p for p in plot_only if 'beta_lin' in p]
+    plot_only = [p for p in plot_only if 'delay_actor_5000' in p]
     plot(max_in_plot=100, only_files=plot_only)

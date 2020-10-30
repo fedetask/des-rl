@@ -88,7 +88,10 @@ def eval_policy(policy, env, test_episodes=100, render=False, wait_key=False):
         done = False
         tot_reward = 0
         while not done:
-            action = policy(state)
+            if policy == 'random':
+                action = env.action_space.sample()
+            else:
+                action = policy(state)
             next_state, rew, done, info = env.step(action)
             if render:
                 env.render()
