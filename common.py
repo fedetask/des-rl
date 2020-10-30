@@ -1,3 +1,4 @@
+import os
 import numbers
 
 import torch
@@ -155,3 +156,9 @@ def compute_real_targets(episode_rewards, df):
         lambda tot, x: x + df * tot
     ))
     return targets[::-1]
+
+
+def save_models(models, dir):
+    os.makedirs(dir, exist_ok=True)
+    for name, model in models.items():
+        torch.save(model, os.path.join(dir, name))
