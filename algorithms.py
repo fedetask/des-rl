@@ -303,9 +303,9 @@ if __name__ == '__main__':
     import networks
     from matplotlib import pyplot as plt
 
-    ENV_NAME = 'Pendulum-v0'
-    TRAIN_STEPS = 5000
-    PREFILL_STEPS = 1000
+    ENV_NAME = 'LunarLanderContinuous-v2'
+    TRAIN_STEPS = 100000
+    PREFILL_STEPS = 10000
     SHOW_PLOT = False
 
     env = gym.make(ENV_NAME)
