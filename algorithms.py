@@ -14,6 +14,7 @@ import common
 
 device = 'cpu'
 
+
 class TD3:
 
     def __init__(self, critic_net, actor_net, training_steps=-1, max_action=None, min_action=None,
@@ -22,7 +23,7 @@ class TD3:
                  train_actor_every=2, actor_beta=None, update_targets_every=2, tau=0.005,
                  target_noise=0.2, target_noise_clip=0.5, epsilon_start=0.15, epsilon_end=0.15,
                  epsilon_decay_schedule='const', dtype=torch.float, evaluate_every=-1,
-                 evaluation_episodes=5):
+                 evaluation_episodes=5, checkpoint_every=-1, checkpoint_dir=None):
         """Instantiate the TD3 algorithm.
 
         Args:
@@ -70,6 +71,8 @@ class TD3:
         self._dtype = dtype
         self._evaluate_every = evaluate_every
         self._evaluation_episodes = evaluation_episodes
+        self._chechpoint_every = checkpoint_every
+        self._checkpoint_dir = checkpoint_dir
         if prioritized_replay:
             self.replay_buffer = replay_buffers.PrioritizedReplayBuffer(buffer_len)
         else:
@@ -131,6 +134,7 @@ class TD3:
             if self._evaluate_every > 0 else []
         critic_losses = []
         actor_losses = []
+        cpk_dir = env.unwrapped.spec.id if self._checkpoint_dir is None else self._checkpoint_dir
 
         if buffer_prefiller is not None:
             buffer_prefiller.fill(self.replay_buffer, env)
@@ -156,6 +160,15 @@ class TD3:
             predicted_target_values.append(step_res['targets'])
             critic_losses.append(step_res['critic_loss'])
             actor_losses.append(step_res['actor_loss'])
+
+            if step % self._chechpoint_every == 0:
+                common.save_models(
+                    models={
+                        f'actor_{step}': self.networks.actor_net,
+                        f'critic_{step}': self.networks.critic_nets
+                    },
+                    dir=f'models/{cpk_dir}'
+                )
 
             if done:
                 rewards.append(np.sum(episode_rewards))
@@ -286,9 +299,9 @@ if __name__ == '__main__':
     import networks
     from matplotlib import pyplot as plt
 
-    ENV_NAME = 'LunarLanderContinuous-v2'
-    TRAIN_STEPS = 50000
-    PREFILL_STEPS = 10000
+    ENV_NAME = 'Pendulum-v0'
+    TRAIN_STEPS = 5000
+    PREFILL_STEPS = 1000
     SHOW_PLOT = False
 
     env = gym.make(ENV_NAME)
@@ -334,6 +347,7 @@ if __name__ == '__main__':
         epsilon_decay_schedule='const',
         dtype=torch.float,
         evaluate_every=-1,
+        checkpoint_every=2000
     )
     prefiller = replay_buffers.BufferPrefiller(num_transitions=PREFILL_STEPS)
     train_result = td3.train(env)
