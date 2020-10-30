@@ -12,10 +12,7 @@ import itertools
 from deepq import computations, deepqnetworks, policies, replay_buffers
 import common
 
-use_cuda = torch.cuda.is_available()
-FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
-LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
-Tensor = FloatTensor
+device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 
 
 class TD3:
@@ -249,7 +246,7 @@ class TD3:
             while not done:
                 with torch.no_grad():
                     action = self.networks.actor_net(
-                        torch.tensor(state, dtype=self._dtype).unsqueeze(0)
+                        torch.tensor(state, dtype=self._dtype, device=device).unsqueeze(0)
                     )[0]
                     action = action.numpy().clip(self.min_action, self.max_action)
                 next_state, reward, done, _ = env.step(action)
@@ -260,7 +257,7 @@ class TD3:
     def _act(self, state):
         with torch.no_grad():
             net_action = self.networks.actor_net(
-                torch.tensor(state, dtype=self._dtype).unsqueeze(0))[0]
+                torch.tensor(state, dtype=self._dtype, device=device).unsqueeze(0))[0]
         if self.backbone_policy is not None:
             backbone_action = self.backbone_policy(state)
             residual = self.policy_train.act(net_action).detach().cpu().numpy()
@@ -273,8 +270,8 @@ class TD3:
 
     def _td_error(self, states, actions, targets):
         with torch.no_grad():
-            state_ts = torch.tensor(states, dtype=self._dtype)
-            action_ts = torch.tensor(actions, dtype=self._dtype)
+            state_ts = torch.tensor(states, dtype=self._dtype, device=device)
+            action_ts = torch.tensor(actions, dtype=self._dtype, device=device)
             q_value = self.networks.predict_values(
                 state_ts, action_ts, mode='avg').numpy()
         return np.abs(targets - q_value).squeeze()
@@ -289,8 +286,6 @@ if __name__ == '__main__':
     import gym
     import networks
     from matplotlib import pyplot as plt
-
-    device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 
     ENV_NAME = 'LunarLanderContinuous-v2'
     TRAIN_STEPS = 50000
