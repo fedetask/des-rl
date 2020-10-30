@@ -161,7 +161,7 @@ class TD3:
             critic_losses.append(step_res['critic_loss'])
             actor_losses.append(step_res['actor_loss'])
 
-            if step % self._chechpoint_every == 0:
+            if step % self._chechpoint_every == 0 and self._chechpoint_every > 0:
                 common.save_models(
                     models={
                         f'actor_{step}': self.networks.actor_net,
