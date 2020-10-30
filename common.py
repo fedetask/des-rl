@@ -162,3 +162,10 @@ def save_models(models, dir):
     os.makedirs(dir, exist_ok=True)
     for name, model in models.items():
         torch.save(model, os.path.join(dir, name))
+
+
+def load_models(dir, device='cpu'):
+    models = {}
+    for file in os.listdir(dir):
+        models[file] = torch.load(os.path.join(dir, file), device)
+    return models
