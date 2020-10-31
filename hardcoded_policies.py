@@ -129,4 +129,4 @@ if __name__ == '__main__':
         _actor = torch.load(args.model[0], 'cpu')
 
     res = eval_policy(_actor, _env, test_episodes=args.ntest[0])
-    print(f'Mean test reward: {res.mean()}')
+    print(f'Mean test reward: {res.mean()}  variance: {res.std()}')
