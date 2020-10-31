@@ -1,29 +1,28 @@
-"""This module contains some pre-cooked algorithms that you can use if do not care about building
-yours from the available components.
-"""
-
+import copy
+import numpy as np
+import os
 import torch
 import torch.nn.functional as F
-import numpy as np
-import copy
 import tqdm
-import itertools
 
-from deepq import computations, deepqnetworks, policies, replay_buffers
 import common
+from deepq import computations
+from deepq import deepqnetworks
+from deepq import policies
+from deepq import replay_buffers
 
 device = 'cpu'
 
 
 class TD3:
 
-    def __init__(self, critic_net, actor_net, training_steps=-1, max_action=None, min_action=None,
+    def __init__(self, critic_net, actor_net, training_steps, max_action=None, min_action=None,
                  backbone_policy=None, buffer_len=100000, prioritized_replay=False, df=0.99,
                  batch_size=128, critic_lr=0.001, actor_lr=0.001, actor_start_train_at=0,
                  train_actor_every=2, actor_beta=None, update_targets_every=2, tau=0.005,
                  target_noise=0.2, target_noise_clip=0.5, epsilon_start=0.15, epsilon_end=0.15,
                  epsilon_decay_schedule='const', dtype=torch.float, evaluate_every=-1,
-                 evaluation_episodes=5, checkpoint_every=-1, checkpoint_dir=None):
+                 evaluation_episodes=5, checkpoint_every=-1, checkpoint_dir='models'):
         """Instantiate the TD3 algorithm.
 
         Args:
@@ -71,7 +70,7 @@ class TD3:
         self._dtype = dtype
         self._evaluate_every = evaluate_every
         self._evaluation_episodes = evaluation_episodes
-        self._chechpoint_every = checkpoint_every
+        self._checkpoint_every = checkpoint_every
         self._checkpoint_dir = checkpoint_dir
         if prioritized_replay:
             self.replay_buffer = replay_buffers.PrioritizedReplayBuffer(buffer_len)
@@ -134,7 +133,6 @@ class TD3:
             if self._evaluate_every > 0 else []
         critic_losses = []
         actor_losses = []
-        cpk_dir = env.unwrapped.spec.id if self._checkpoint_dir is None else self._checkpoint_dir
 
         if buffer_prefiller is not None:
             buffer_prefiller.fill(self.replay_buffer, env)
@@ -161,13 +159,13 @@ class TD3:
             critic_losses.append(step_res['critic_loss'])
             actor_losses.append(step_res['actor_loss'])
 
-            if step % self._chechpoint_every == 0 and self._chechpoint_every > 0:
+            if step % self._checkpoint_every == 0 and self._checkpoint_every > 0:
                 common.save_models(
                     models={
                         f'actor_{step}': self.networks.actor_net,
                         f'critic_{step}': self.networks.critic_nets
                     },
-                    dir=f'models/{cpk_dir}'
+                    dir=os.path.join(self._checkpoint_dir, env.unwrapped.spec.id)
                 )
 
             if done:
@@ -199,10 +197,10 @@ class TD3:
                 steps_range.set_description(tqdm_descr)
             else:
                 state = next_state
-        if self._chechpoint_every > 0:
+        if self._checkpoint_every > 0:
             common.save_models(
                 models={'actor': self.networks.actor_net, 'critic': self.networks.critic_nets},
-                dir=f'models/{cpk_dir}')
+                dir=os.path.join(self._checkpoint_dir, env.unwrapped.spec.id))
         return {
             'rewards': rewards,
             'end_steps': end_steps,
