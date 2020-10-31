@@ -127,5 +127,5 @@ if __name__ == '__main__':
     else:
         _actor = torch.load(args.model[0], 'cpu')
 
-    res = eval_policy(_actor, _env)
+    res = eval_policy(_actor, _env, test_episodes=20)
     print(f'Mean test reward: {res.mean()}')
