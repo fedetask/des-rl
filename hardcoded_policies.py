@@ -119,6 +119,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', action='store', type=str, nargs=1, required=True)
     parser.add_argument('--env', action='store', type=str, nargs=1, required=True)
+    parser.add_argument('--ntest', action='store', type=int, nargs=1, required=False, default=[20])
     args = parser.parse_args()
 
     _env = gym.make(args.env[0])
@@ -127,5 +128,5 @@ if __name__ == '__main__':
     else:
         _actor = torch.load(args.model[0], 'cpu')
 
-    res = eval_policy(_actor, _env, test_episodes=20)
+    res = eval_policy(_actor, _env, test_episodes=args.ntest[0])
     print(f'Mean test reward: {res.mean()}')
