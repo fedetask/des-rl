@@ -208,7 +208,7 @@ if __name__ == '__main__':
 
     # Load actor and critic that we want to use
     _actor = torch.load('models/standard/LunarLanderContinuous-v2/actor_20000')
-    _critic = torch.load('models/standard/LunarLanderContinuous-v2/critic_20000')
+    _critic = torch.load('models/standard/LunarLanderContinuous-v2/critic_20000')[0]
 
     # Continue their training
     continue_training(
