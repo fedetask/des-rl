@@ -206,11 +206,37 @@ if __name__ == '__main__':
     _env = gym.make('LunarLanderContinuous-v2')
     _results_dir = 'experiment_results/td3/lunar_lander'
 
+    # Load actor and critic that we want to use
+    _actor = torch.load('models/standard/LunarLanderContinuous-v2/actor_20000')
+    _critic = torch.load('models/standard/LunarLanderContinuous-v2/critic_20000')
+
+    # Continue their training
+    continue_training(
+        _env, _actor, _critic, train_steps=TRAINING_STEPS, num_runs=10,
+        results_dir='experiment_results/td3/continue/lunar_lander/',
+        exp_name_suffix='_20000_eps_const_0.1'
+    )
+
+    # Create backbone policy that uses the torch model
+    def lander_20000_policy(state):
+        with torch.no_grad():
+            action = _actor(
+                torch.tensor(state).unsqueeze(0).float()
+            )[0].detach().numpy()
+        return action
+
+    # Train with backbone
+    train_with_backbone(
+        _env, train_steps=TRAINING_STEPS, num_runs=10, backbone_policy=lander_20000_policy,
+        results_dir='experiment_results/td3/backbone/lunar_lander/',
+        exp_name_suffix='_20000_eps_const_0.1'
+    )
+
+    """
     # Perform standard training
     standard_training(_env, train_steps=TRAINING_STEPS, num_runs=1, results_dir=_results_dir,
                       exp_name_suffix='_eps_const_0.1')
 
-    """
     # Perform training with backbone policy
     _actor = torch.load('models/LunarLanderContinuous-v2/actor_80000')
     
