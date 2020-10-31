@@ -122,7 +122,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     _env = gym.make(args.env[0])
-    _actor = torch.load(args.model[0], 'cpu')
+    if args.model[0] == 'random':
+        _actor = args.model[0]
+    else:
+        _actor = torch.load(args.model[0], 'cpu')
 
     res = eval_policy(_actor, _env)
     print(f'Mean test reward: {res.mean()}')
