@@ -15,15 +15,15 @@ from deepq import replay_buffers
 
 BACKBONE_RESULTS_DIR = 'experiment_results/td3/backbone_experiments/'
 
+NUM_RUNS = 10
+TRAINING_STEPS = 80000
+BUFFER_PREFILL_STEPS = 30000
+COLLECTION_POLICY_NOISE = 1.5
 RL_CRITIC_LR = 0.5e-3
 RL_ACTOR_LR = 0.5e-3
-BUFFER_PREFILL_STEPS = 5000
+EPSILON_START = 0.1
+EPSILON_END = 0.1
 EPSILON_DECAY_SCHEDULE = 'const'
-BACKBONE_POLICY = hardcoded_policies.pendulum
-TRAINING_STEPS = 15000
-NUM_RUNS = 10
-COLLECTION_POLICY_NOISE = 2.
-EPSILON_START = 0.15
 
 
 def get_actor_critic(state_len, action_len, max_action):
@@ -80,6 +80,7 @@ def train_with_backbone(env: gym.Env, train_steps, num_runs, backbone_policy, ex
                              min_action=-max_action, critic_lr=RL_CRITIC_LR,
                              actor_lr=RL_CRITIC_LR, evaluate_every=-1,
                              backbone_policy=backbone_policy,
+                             epsilon_start=EPSILON_START, epsilon_end=EPSILON_END,
                              epsilon_decay_schedule=EPSILON_DECAY_SCHEDULE)
         prefiller = replay_buffers.BufferPrefiller(
             num_transitions=BUFFER_PREFILL_STEPS, collection_policy=backbone_policy,
@@ -193,8 +194,7 @@ def plot(dir, max_in_plot=2, always_plot='standard_training.npy', cut_pretrain_a
 
 if __name__ == '__main__':
     env = gym.make('LunarLanderContinuous-v2')
-    models = common.load_models('models/LunarLanderContinuous-v2')
-    _actor = models['actor']
+    _actor = torch.load('models/LunarLanderContinuous-v2/actor_80000')
 
     def model_policy(state):
         with torch.no_grad():
@@ -205,8 +205,11 @@ if __name__ == '__main__':
 
     standard_training(env, train_steps=TRAINING_STEPS, num_runs=10)
     train_with_backbone(
-        env=env, train_steps=TRAINING_STEPS, num_runs=10, backbone_policy=model_policy)
+        exp_name_prefix='actor_80000', env=env, train_steps=TRAINING_STEPS, num_runs=10,
+        backbone_policy=model_policy
+    )
 
+    exit()
     standard = experiment_utils.read_result_numpy(experiment_utils.PENDULUM_TD3_RESULTS_DIR,
                                                   'standard_training.npy')
     std_x, std_y, _, _ = experiment_utils.merge_plots(standard['train'])
@@ -218,3 +221,4 @@ if __name__ == '__main__':
     plt.plot(backbone_x, backbone_y, label='backbone')
     plt.legend()
     plt.show()
+
