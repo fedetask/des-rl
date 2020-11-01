@@ -206,7 +206,7 @@ if __name__ == '__main__':
     _env = gym.make('LunarLanderContinuous-v2')
     _results_dir = 'experiment_results/td3/lunar_lander'
 
-    standard_training(TRAINING_STEPS, num_runs=1, results_dir=_results_dir,
+    standard_training(_env, train_steps=TRAINING_STEPS, num_runs=1, results_dir=_results_dir,
                       exp_name_suffix='_eps_lin_0.15_to_0.05')
     exit()
 
