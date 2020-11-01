@@ -15,15 +15,15 @@ from deepq import replay_buffers
 
 
 NUM_RUNS = 10
-TRAINING_STEPS = 50000
-BUFFER_PREFILL_STEPS = 10000
+TRAINING_STEPS = 80000
+BUFFER_PREFILL_STEPS = 30000
 COLLECTION_POLICY_NOISE = 1.5
 RL_CRITIC_LR = 0.5e-3
 RL_ACTOR_LR = 0.5e-3
-EPSILON_START = 0.1
-EPSILON_END = 0.1
-EPSILON_DECAY_SCHEDULE = 'const'
-CHECKPOINT_EVERY = 5000
+EPSILON_START = 0.15
+EPSILON_END = 0.05
+EPSILON_DECAY_SCHEDULE = 'linear'
+CHECKPOINT_EVERY = 2500
 
 
 def get_actor_critic(state_len, action_len, max_action):
@@ -206,11 +206,15 @@ if __name__ == '__main__':
     _env = gym.make('LunarLanderContinuous-v2')
     _results_dir = 'experiment_results/td3/lunar_lander'
 
+    standard_training(TRAINING_STEPS, num_runs=1, results_dir=_results_dir,
+                      exp_name_suffix='_eps_lin_0.15_to_0.05')
+    exit()
+
     # Load actor and critic that we want to use
     _actor = torch.load('models/standard/LunarLanderContinuous-v2/actor_20000')
     _critic = torch.load('models/standard/LunarLanderContinuous-v2/critic_20000')[0]
 
-    # Continue their training
+    # Continue their training (makes a copy of actor and critic so they are not modified)
     continue_training(
         _env, _actor, _critic, train_steps=TRAINING_STEPS, num_runs=10,
         results_dir='experiment_results/td3/continue/lunar_lander/',
@@ -231,24 +235,3 @@ if __name__ == '__main__':
         results_dir='experiment_results/td3/backbone/lunar_lander/',
         exp_name_suffix='_20000_eps_const_0.1'
     )
-
-    """
-    # Perform standard training
-    standard_training(_env, train_steps=TRAINING_STEPS, num_runs=1, results_dir=_results_dir,
-                      exp_name_suffix='_eps_const_0.1')
-
-    # Perform training with backbone policy
-    _actor = torch.load('models/LunarLanderContinuous-v2/actor_80000')
-    
-    def model_policy(state):
-        with torch.no_grad():
-            action = _actor(
-                torch.tensor(state).unsqueeze(0).float()
-            )[0].detach().numpy()
-        return action
-
-    train_with_backbone(
-        exp_name_prefix='actor_80000', env=env, train_steps=TRAINING_STEPS, num_runs=10,
-        backbone_policy=model_policy
-    )
-    """
