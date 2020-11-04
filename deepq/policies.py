@@ -51,7 +51,7 @@ class EpsilonGreedyPolicy(BasePolicy):
     p = 1 - epsilon and a random action with p = epsilon.
     """
 
-    def __init__(self, start_epsilon, end_epsilon, decay_steps, decay_schedule='lin'):
+    def __init__(self, start_epsilon, end_epsilon, decay_steps, decay_schedule='lin', probs=None):
         """Instantiate the base epsilon greedy policy.
 
         Args:
@@ -63,6 +63,7 @@ class EpsilonGreedyPolicy(BasePolicy):
         """
         self.epsilon_updater = common.ParameterUpdater(
             start_epsilon, end_epsilon, decay_steps, decay_schedule)
+        self.probs = probs
 
     def act(self, q_values, *args, **kwargs):
         """Choose the action from the given Q values, update epsilon, and return the action.
@@ -74,7 +75,10 @@ class EpsilonGreedyPolicy(BasePolicy):
             A 1-dimensional numpy array with the index of the chosen action.
         """
         if np.random.binomial(1, p=self.epsilon_updater.cur_value):
-            action = np.array([np.random.choice(range(len(q_values)))])
+            if self.probs is None:
+                action = np.array([np.random.choice(range(len(q_values)))])
+            else:
+                action = np.array([np.random.choice(range(len(q_values)), p=self.probs)])
         else:
             action = np.array([np.argmax(q_values)])
         self.epsilon_updater.update()
