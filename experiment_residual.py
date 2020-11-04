@@ -235,8 +235,8 @@ def from_policy(policy, env, exp_suffix, standard_train=True):
 
 if __name__ == '__main__':
     NUM_RUNS = 1
-    TRAINING_STEPS = 150
-    BUFFER_PREFILL_STEPS = 30
+    TRAINING_STEPS = 150000
+    BUFFER_PREFILL_STEPS = 30000
     COLLECTION_POLICY_NOISE = 2
     RL_CRITIC_LR = 1e-3
     RL_ACTOR_LR = 1e-3
