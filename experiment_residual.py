@@ -14,30 +14,18 @@ import hardcoded_policies
 from deepq import replay_buffers
 
 
-NUM_RUNS = 10
-TRAINING_STEPS = 150000
-BUFFER_PREFILL_STEPS = 30000
-COLLECTION_POLICY_NOISE = 1.5
-RL_CRITIC_LR = 1e-4
-RL_ACTOR_LR = 1e-4
-EPSILON_START = 0.1
-EPSILON_END = 0.1
-EPSILON_DECAY_SCHEDULE = 'const'
-CHECKPOINT_EVERY = 5000
-
-
 def get_actor_critic(state_len, action_len, max_action):
     critic = networks.LinearNetwork(
         inputs=state_len + action_len,
         outputs=1,
-        n_hidden_layers=3,
+        n_hidden_layers=1,
         n_hidden_units=256,
         activation=F.relu
     )
     actor = networks.LinearNetwork(
         inputs=state_len,
         outputs=action_len,
-        n_hidden_layers=3,
+        n_hidden_layers=1,
         n_hidden_units=256,
         activation=F.relu,
         activation_last_layer=torch.tanh,
@@ -202,32 +190,76 @@ def continue_training(env, actor_net, critic_net, train_steps, num_runs, results
     experiment_utils.save_results_numpy(results_dir, exp_name, data_dict)
 
 
-if __name__ == '__main__':
-    _env = gym.make('LunarLanderContinuous-v2')
-    _results_dir = 'experiment_results/td3/lunar_lander'
-
+def from_model(actor_path, critic_path, env, exp_suffix):
     # Load actor and critic that we want to use
-    _actor = torch.load('models/standard/LunarLanderContinuous-v2/actor_60000')
-    _critic = torch.load('models/standard/LunarLanderContinuous-v2/critic_60000')[0]
+    actor = torch.load(actor_path)
+    critic = torch.load(critic_path)[0]
 
     # Continue their training (makes a copy of actor and critic so they are not modified)
     continue_training(
-        _env, _actor, _critic, train_steps=TRAINING_STEPS, num_runs=10,
-        results_dir='experiment_results/td3/continue/lunar_lander/',
-        exp_name_suffix='_60000_eps_const_0.1'
+        env, actor, critic, train_steps=TRAINING_STEPS, num_runs=10,
+        results_dir=f'experiment_results/td3/continue/{env.unwrapped.spec.id}/',
+        exp_name_suffix=exp_suffix
     )
 
     # Create backbone policy that uses the torch model
     def lander_20000_policy(state):
         with torch.no_grad():
-            action = _actor(
+            action = actor(
                 torch.tensor(state).unsqueeze(0).float()
             )[0].detach().numpy()
         return action
 
     # Train with backbone
     train_with_backbone(
-        _env, train_steps=TRAINING_STEPS, num_runs=10, backbone_policy=lander_20000_policy,
-        results_dir='experiment_results/td3/backbone/lunar_lander/',
-        exp_name_suffix='_60000_eps_const_0.1'
+        env, train_steps=TRAINING_STEPS, num_runs=10, backbone_policy=lander_20000_policy,
+        results_dir=f'experiment_results/td3/backbone/{env.unwrapped.spec.id}/',
+        exp_name_suffix=exp_suffix
     )
+
+
+def from_policy(policy, env, exp_suffix, standard_train=True):
+    if standard_train:
+        standard_training(
+            env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS,
+            results_dir=f'experiment_results/td3/standard/{env.unwrapped.spec.id}/',
+            exp_name_suffix=exp_suffix
+        )
+
+    train_with_backbone(
+        env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS, backbone_policy=policy,
+        results_dir=f'experiment_results/td3/backbone/{env.unwrapped.spec.id}/',
+        exp_name_suffix=exp_suffix
+    )
+
+
+if __name__ == '__main__':
+    NUM_RUNS = 5
+    TRAINING_STEPS = 15000
+    BUFFER_PREFILL_STEPS = 5000
+    COLLECTION_POLICY_NOISE = 2
+    RL_CRITIC_LR = 0.5e-3
+    RL_ACTOR_LR = 0.5e-3
+    EPSILON_START = 0.15
+    EPSILON_END = 0.05
+    EPSILON_DECAY_SCHEDULE = 'exp'
+    CHECKPOINT_EVERY = -1
+
+    _env = gym.make('Pendulum-v0')
+
+    """from_policy(
+        policy=hardcoded_policies.pendulum, env=_env, exp_suffix='eps_0.15', standard_train=True
+    )"""
+    for e_start in [0.1, 0.15]:
+        for e_end in [0.01, e_start]:
+            for prefill in [2000, 5000, 10000]:
+                for decay in ['exp, lin']:
+                    EPSILON_START = e_start
+                    EPSILON_END = e_end
+                    BUFFER_PREFILL_STEPS = prefill
+                    EPSILON_DECAY_SCHEDULE = decay if e_start != e_end else 'const'
+                    standard_training(
+                        env=_env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS,
+                        results_dir=f'experiment_results/td3/standard/{_env.unwrapped.spec.id}/',
+                        exp_name_suffix=f'_eps_{e_start}_{e_end}_{decay}_prefill_{prefill}'
+                    )
