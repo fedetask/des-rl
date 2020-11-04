@@ -80,7 +80,6 @@ def pendulum(obs):
             action = left
         else:
             action = right
-    #print('State: ' + str(obs) + ' action: ' + str(action))
     return action
 
 
@@ -90,6 +89,7 @@ def eval_policy(policy, env, test_episodes=100, render=False, wait_key=False):
         state = env.reset()
         done = False
         tot_reward = 0
+        step = 0
         while not done:
             if policy == 'random':
                 action = env.action_space.sample()
@@ -108,25 +108,29 @@ def eval_policy(policy, env, test_episodes=100, render=False, wait_key=False):
                 input()
             tot_reward += rew
             state = next_state
+            step += 1
         rewards.append(tot_reward)
     return np.array(rewards)
 
 
 if __name__ == '__main__':
-    import common
-    import os
+    POLICIES = [pendulum, ]
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model', action='store', type=str, nargs=1, required=True)
+    parser.add_argument('--policy', action='store', type=str, nargs=1, required=True)
     parser.add_argument('--env', action='store', type=str, nargs=1, required=True)
     parser.add_argument('--ntest', action='store', type=int, nargs=1, required=False, default=[20])
+    parser.add_argument('--render', action='store_true', required=False, default=False)
     args = parser.parse_args()
 
     _env = gym.make(args.env[0])
-    if args.model[0] == 'random':
-        _actor = args.model[0]
+    if args.policy[0] == 'random':
+        _actor = args.policy[0]
     else:
-        _actor = torch.load(args.model[0], 'cpu')
+        try:
+            _actor = eval(args.policy[0])
+        except NameError:
+            _actor = torch.load(args.policy[0], 'cpu')
 
-    res = eval_policy(_actor, _env, test_episodes=args.ntest[0])
+    res = eval_policy(_actor, _env, test_episodes=args.ntest[0], render=args.render)
     print(f'Mean test reward: {res.mean()}  variance: {res.std()}')
