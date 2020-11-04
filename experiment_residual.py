@@ -234,32 +234,19 @@ def from_policy(policy, env, exp_suffix, standard_train=True):
 
 
 if __name__ == '__main__':
-    NUM_RUNS = 5
-    TRAINING_STEPS = 15000
-    BUFFER_PREFILL_STEPS = 5000
+    NUM_RUNS = 1
+    TRAINING_STEPS = 150
+    BUFFER_PREFILL_STEPS = 30
     COLLECTION_POLICY_NOISE = 2
-    RL_CRITIC_LR = 0.5e-3
-    RL_ACTOR_LR = 0.5e-3
-    EPSILON_START = 0.15
-    EPSILON_END = 0.05
-    EPSILON_DECAY_SCHEDULE = 'exp'
-    CHECKPOINT_EVERY = -1
+    RL_CRITIC_LR = 1e-3
+    RL_ACTOR_LR = 1e-3
+    EPSILON_START = 0.1
+    EPSILON_END = 0.1
+    EPSILON_DECAY_SCHEDULE = 'const'
+    CHECKPOINT_EVERY = 5000
 
-    _env = gym.make('Pendulum-v0')
+    _env = gym.make('LunarLanderContinuous-v2')
 
-    """from_policy(
-        policy=hardcoded_policies.pendulum, env=_env, exp_suffix='eps_0.15', standard_train=True
-    )"""
-    for e_start in [0.1, 0.15]:
-        for e_end in [0.01, e_start]:
-            for prefill in [2000, 5000, 10000]:
-                for decay in ['exp, lin']:
-                    EPSILON_START = e_start
-                    EPSILON_END = e_end
-                    BUFFER_PREFILL_STEPS = prefill
-                    EPSILON_DECAY_SCHEDULE = decay if e_start != e_end else 'const'
-                    standard_training(
-                        env=_env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS,
-                        results_dir=f'experiment_results/td3/standard/{_env.unwrapped.spec.id}/',
-                        exp_name_suffix=f'_eps_{e_start}_{e_end}_{decay}_prefill_{prefill}'
-                    )
+    standard_training(env=_env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS,
+                      results_dir=f'experiment_results/td3/standard/{_env.unwrapped.spec.id}/')
+
