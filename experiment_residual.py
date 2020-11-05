@@ -206,7 +206,7 @@ def backbone_experiment(env, train_steps, num_runs, actor_path, critic_path, exp
         env=env, train_steps=train_steps, num_runs=num_runs, actor_net=actor, critic_net=critic,
         buffer_len=buffer_len, buffer_prefill=buffer_prefill, actor_lr=actor_lr,
         batch_size=batch_size, critic_lr=critic_lr, df=df, eps_start=eps_start, eps_end=eps_end,
-        eps_decay=eps_decay, collection_policy_noise=collection_policy_noise,
+        eps_decay=eps_decay, collection_policy_noise=eps_start,
         collection_policy=model_policy, checkpoint_every=checkpoint_every,
         results_dir=f'experiment_results/td3/continue/{env.unwrapped.spec.id}/',
         exp_name_suffix=exp_suffix,
@@ -225,25 +225,37 @@ def backbone_experiment(env, train_steps, num_runs, actor_path, critic_path, exp
 
 
 if __name__ == '__main__':
-    NUM_RUNS = 5
-    TRAINING_STEPS = 100000
-    BUFFER_PREFILL_STEPS = 25000
+    NUM_RUNS = 10
+    TRAINING_STEPS = 15000
+    BUFFER_PREFILL_STEPS = 2000
     BUFFER_LEN = TRAINING_STEPS + BUFFER_PREFILL_STEPS
     COLLECTION_POLICY_NOISE = 1.5
-    CRITIC_LR = 5e-4
-    ACTOR_LR = 5e-4
-    UPDATE_NET_EVERY = 4
-    DISCOUNT_FACTOR = 0.999
+    CRITIC_LR = 1e-3
+    ACTOR_LR = 1e-3
+    UPDATE_NET_EVERY = 2
+    DISCOUNT_FACTOR = 0.99
     BATCH_SIZE = 100
-    EPSILON_START = 0.15
-    EPSILON_END = 0.05
+    EPSILON_START = 0.2
+    EPSILON_END = 0.0
     EPSILON_DECAY_SCHEDULE = 'lin'
-    CHECKPOINT_EVERY = 5000
+    CHECKPOINT_EVERY = 1000
 
-    _env = gym.make('LunarLanderContinuous-v2')
+    _env = gym.make('Pendulum-v0')
 
-    actor_path = 'models/standard/LunarLanderContinuous-v2/actor_15000'
-    critic_path = 'models/standard/LunarLanderContinuous-v2/critic_15000'
+    """
+    standard_training(
+        env=_env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS,
+        buffer_len=BUFFER_LEN, buffer_prefill=BUFFER_PREFILL_STEPS,
+        actor_lr=ACTOR_LR, critic_lr=CRITIC_LR, df=DISCOUNT_FACTOR, batch_size=BATCH_SIZE,
+        eps_start=EPSILON_START, eps_end=EPSILON_END, eps_decay=EPSILON_DECAY_SCHEDULE,
+        checkpoint_every=CHECKPOINT_EVERY,
+        exp_name_suffix=f'_eps_{EPSILON_START}_to_{EPSILON_END}_prefill_{BUFFER_PREFILL_STEPS}',
+        results_dir=f'experiment_results/td3/standard/{_env.unwrapped.spec.id}/'
+    )
+    """
+
+    actor_path = 'models/standard/Pendulum-v0/actor_5000'
+    critic_path = 'models/standard/Pendulum-v0/critic_5000'
 
     backbone_experiment(
         env=_env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS, actor_path=actor_path,
@@ -251,4 +263,6 @@ if __name__ == '__main__':
         actor_lr=ACTOR_LR, critic_lr=CRITIC_LR, df=DISCOUNT_FACTOR, batch_size=BATCH_SIZE,
         eps_start=EPSILON_START, eps_end=EPSILON_END, eps_decay=EPSILON_DECAY_SCHEDULE,
         collection_policy_noise=COLLECTION_POLICY_NOISE, checkpoint_every=CHECKPOINT_EVERY,
-        exp_suffix='_actor_critic_15000')
+        exp_suffix=f'_actor_10000__eps_{EPSILON_START}_to_{EPSILON_END}_prefill_{BUFFER_PREFILL_STEPS}'
+    )
+
