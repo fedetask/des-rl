@@ -87,7 +87,6 @@ def backbone_training(env: gym.Env, train_steps, num_runs, backbone_policy, buff
         train_scores.append(experiment_utils.Plot(
             train_res['end_steps'], train_res['rewards'], name='train'))
     data_dict = {
-        'params': locals(),
         'train': train_scores
     }
 
@@ -132,7 +131,6 @@ def standard_training(env: gym.Env, train_steps, num_runs, buffer_len, buffer_pr
         train_eval_scores.append(experiment_utils.Plot(
             train_res['eval_steps'], train_res['eval_scores'], name='eval'))
     data_dict = {
-        'params': locals(),
         'train': train_scores
     }
     exp_name = exp_name_prefix + standard_training.__name__ + exp_name_suffix
@@ -141,8 +139,8 @@ def standard_training(env: gym.Env, train_steps, num_runs, buffer_len, buffer_pr
 
 def continue_training(env: gym.Env, train_steps, num_runs, actor_net, critic_net, buffer_len,
                       buffer_prefill, actor_lr, critic_lr, df, batch_size, eps_start, eps_end,
-                      eps_decay, checkpoint_every, results_dir, exp_name_prefix='',
-                      exp_name_suffix=''):
+                      collection_policy_noise, collection_policy, eps_decay, checkpoint_every,
+                      results_dir, exp_name_prefix='', exp_name_suffix=''):
     """Continue training the given networks and saves the results.
 
     Args:
@@ -155,6 +153,7 @@ def continue_training(env: gym.Env, train_steps, num_runs, actor_net, critic_net
         exp_name_prefix (str): Prefix for the experiment name.
         exp_name_suffix (str): Suffix for experiment name.
     """
+    params = locals()
     max_action = env.action_space.high[0]
 
     train_scores = []
@@ -170,14 +169,17 @@ def continue_training(env: gym.Env, train_steps, num_runs, actor_net, critic_net
                                 epsilon_decay_schedule=eps_decay,
                                 checkpoint_every=checkpoint_every,
                                 checkpoint_dir='models/continue/')
-        prefiller = replay_buffers.BufferPrefiller(num_transitions=buffer_prefill)
+        prefiller = replay_buffers.BufferPrefiller(
+            num_transitions=buffer_prefill, collection_policy=collection_policy,
+            collection_policy_noise=collection_policy_noise, min_action=-max_action,
+            max_action=max_action, use_residual=False
+        )
         train_res = td3_algorithm.train(env, buffer_prefiller=prefiller)
         train_scores.append(experiment_utils.Plot(
             train_res['end_steps'], train_res['rewards'], name='train'))
         train_eval_scores.append(experiment_utils.Plot(
             train_res['eval_steps'], train_res['eval_scores'], name='eval'))
     data_dict = {
-        'params': locals(),
         'train': train_scores
     }
     exp_name = exp_name_prefix + continue_training.__name__ + exp_name_suffix
@@ -191,16 +193,6 @@ def backbone_experiment(env, train_steps, num_runs, actor_path, critic_path, exp
     actor = torch.load(actor_path)
     critic = torch.load(critic_path)[0]
 
-    # Continue their training (makes a copy of actor and critic so they are not modified)
-    continue_training(
-        env=env, train_steps=train_steps, num_runs=num_runs, actor_net=actor, critic_net=critic,
-        buffer_len=buffer_len, buffer_prefill=buffer_prefill, actor_lr=actor_lr,
-        batch_size=batch_size, critic_lr=critic_lr, df=df, eps_start=eps_start, eps_end=eps_end,
-        eps_decay=eps_decay, checkpoint_every=checkpoint_every,
-        results_dir=f'experiment_results/td3/continue/{env.unwrapped.spec.id}/',
-        exp_name_suffix=exp_suffix,
-    )
-
     # Create backbone policy that uses the torch model
     def model_policy(state):
         with torch.no_grad():
@@ -208,6 +200,17 @@ def backbone_experiment(env, train_steps, num_runs, actor_path, critic_path, exp
                 torch.tensor(state).unsqueeze(0).float()
             )[0].detach().numpy()
         return action
+
+    # Continue their training (makes a copy of actor and critic so they are not modified)
+    continue_training(
+        env=env, train_steps=train_steps, num_runs=num_runs, actor_net=actor, critic_net=critic,
+        buffer_len=buffer_len, buffer_prefill=buffer_prefill, actor_lr=actor_lr,
+        batch_size=batch_size, critic_lr=critic_lr, df=df, eps_start=eps_start, eps_end=eps_end,
+        eps_decay=eps_decay, collection_policy_noise=collection_policy_noise,
+        collection_policy=model_policy, checkpoint_every=checkpoint_every,
+        results_dir=f'experiment_results/td3/continue/{env.unwrapped.spec.id}/',
+        exp_name_suffix=exp_suffix,
+    )
 
     # Train with backbone
     backbone_training(
@@ -222,29 +225,30 @@ def backbone_experiment(env, train_steps, num_runs, actor_path, critic_path, exp
 
 
 if __name__ == '__main__':
-    NUM_RUNS = 1
-    TRAINING_STEPS = 40000
-    BUFFER_PREFILL_STEPS = 10000
-    BUFFER_LEN = TRAINING_STEPS
+    NUM_RUNS = 5
+    TRAINING_STEPS = 100000
+    BUFFER_PREFILL_STEPS = 15000
+    BUFFER_LEN = TRAINING_STEPS + BUFFER_PREFILL_STEPS
     COLLECTION_POLICY_NOISE = 1.5
     CRITIC_LR = 5e-4
     ACTOR_LR = 5e-4
     UPDATE_NET_EVERY = 4
     DISCOUNT_FACTOR = 0.999
     BATCH_SIZE = 100
-    EPSILON_START = 0.3
-    EPSILON_END = 0.01
-    EPSILON_DECAY_SCHEDULE = 'exp'
-    CHECKPOINT_EVERY = 2500
+    EPSILON_START = 0.15
+    EPSILON_END = 0.05
+    EPSILON_DECAY_SCHEDULE = 'lin'
+    CHECKPOINT_EVERY = 5000
 
     _env = gym.make('LunarLanderContinuous-v2')
 
-    standard_training(env=_env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS,
-                      buffer_len=BUFFER_LEN, buffer_prefill=BUFFER_PREFILL_STEPS,
-                      actor_lr=ACTOR_LR, critic_lr=CRITIC_LR, df=DISCOUNT_FACTOR,
-                      batch_size=BATCH_SIZE, eps_start=EPSILON_START,  eps_end=EPSILON_END,
-                      eps_decay=EPSILON_DECAY_SCHEDULE, checkpoint_every=CHECKPOINT_EVERY,
-                      update_net_every=UPDATE_NET_EVERY,
-                      results_dir=f'experiment_results/td3/standard/{_env.unwrapped.spec.id}/')
+    actor_path = 'models/standard/LunarLanderContinuous-v2/actor_15000'
+    critic_path = 'models/standard/LunarLanderContinuous-v2/critic_15000'
 
-
+    backbone_experiment(
+        env=_env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS, actor_path=actor_path,
+        critic_path=critic_path, buffer_len=BUFFER_LEN, buffer_prefill=BUFFER_PREFILL_STEPS,
+        actor_lr=ACTOR_LR, critic_lr=CRITIC_LR, df=DISCOUNT_FACTOR, batch_size=BATCH_SIZE,
+        eps_start=EPSILON_START, eps_end=EPSILON_END, eps_decay=EPSILON_DECAY_SCHEDULE,
+        collection_policy_noise=COLLECTION_POLICY_NOISE, checkpoint_every=CHECKPOINT_EVERY,
+        exp_suffix='_actor_critic_15000')
