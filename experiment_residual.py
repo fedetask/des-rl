@@ -18,15 +18,15 @@ def get_actor_critic(state_len, action_len, max_action):
     critic = networks.LinearNetwork(
         inputs=state_len + action_len,
         outputs=1,
-        n_hidden_layers=1,
-        n_hidden_units=256,
+        n_hidden_layers=2,
+        n_hidden_units=512,
         activation=F.relu
     )
     actor = networks.LinearNetwork(
         inputs=state_len,
         outputs=action_len,
-        n_hidden_layers=1,
-        n_hidden_units=256,
+        n_hidden_layers=2,
+        n_hidden_units=512,
         activation=F.relu,
         activation_last_layer=torch.tanh,
         output_weight=max_action
@@ -227,8 +227,8 @@ if __name__ == '__main__':
     CRITIC_LR = 1e-3
     ACTOR_LR = 1e-3
     BATCH_SIZE = 100
-    EPSILON_START = 0.1
-    EPSILON_END = 0.1
+    EPSILON_START = 0.05
+    EPSILON_END = 0.05
     EPSILON_DECAY_SCHEDULE = 'const'
     CHECKPOINT_EVERY = 5000
 
