@@ -96,7 +96,7 @@ def backbone_training(env: gym.Env, train_steps, num_runs, backbone_policy, buff
 
 def standard_training(env: gym.Env, train_steps, num_runs, buffer_len, buffer_prefill, actor_lr,
                       critic_lr, df, batch_size, eps_start, eps_end, eps_decay, checkpoint_every,
-                      results_dir, exp_name_prefix='', exp_name_suffix=''):
+                      results_dir, update_net_every=2, exp_name_prefix='', exp_name_suffix=''):
     """Perform standard training with TD3. and saves the results.
 
     Args:
@@ -122,6 +122,7 @@ def standard_training(env: gym.Env, train_steps, num_runs, buffer_len, buffer_pr
                                 df=df, batch_size=batch_size, evaluate_every=-1,
                                 epsilon_start=eps_start, epsilon_end=eps_end,
                                 epsilon_decay_schedule=eps_decay,
+                                update_targets_every=update_net_every,
                                 checkpoint_every=checkpoint_every,
                                 checkpoint_dir='models/standard/')
         prefiller = replay_buffers.BufferPrefiller(num_transitions=buffer_prefill)
@@ -222,18 +223,19 @@ def backbone_experiment(env, train_steps, num_runs, actor_path, critic_path, exp
 
 if __name__ == '__main__':
     NUM_RUNS = 1
-    TRAINING_STEPS = 100000
-    BUFFER_PREFILL_STEPS = 20000
-    BUFFER_LEN = TRAINING_STEPS + BUFFER_PREFILL_STEPS
+    TRAINING_STEPS = 40000
+    BUFFER_PREFILL_STEPS = 10000
+    BUFFER_LEN = TRAINING_STEPS
     COLLECTION_POLICY_NOISE = 2
-    CRITIC_LR = 1e-3
-    ACTOR_LR = 1e-3
+    CRITIC_LR = 5e-4
+    ACTOR_LR = 5e-4
+    UPDATE_NET_EVERY = 4
     DISCOUNT_FACTOR = 0.999
     BATCH_SIZE = 100
-    EPSILON_START = 0.1
-    EPSILON_END = 0.1
-    EPSILON_DECAY_SCHEDULE = 'const'
-    CHECKPOINT_EVERY = 5000
+    EPSILON_START = 0.15
+    EPSILON_END = 0.05
+    EPSILON_DECAY_SCHEDULE = 'lin'
+    CHECKPOINT_EVERY = 2500
 
     _env = gym.make('LunarLanderContinuous-v2')
 
@@ -242,6 +244,7 @@ if __name__ == '__main__':
                       actor_lr=ACTOR_LR, critic_lr=CRITIC_LR, df=DISCOUNT_FACTOR,
                       batch_size=BATCH_SIZE, eps_start=EPSILON_START,  eps_end=EPSILON_END,
                       eps_decay=EPSILON_DECAY_SCHEDULE, checkpoint_every=CHECKPOINT_EVERY,
+                      update_net_every=UPDATE_NET_EVERY,
                       results_dir=f'experiment_results/td3/standard/{_env.unwrapped.spec.id}/')
 
 
