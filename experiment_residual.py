@@ -19,14 +19,14 @@ def get_actor_critic(state_len, action_len, max_action):
         inputs=state_len + action_len,
         outputs=1,
         n_hidden_layers=2,
-        n_hidden_units=512,
+        n_hidden_units=256,
         activation=F.relu
     )
     actor = networks.LinearNetwork(
         inputs=state_len,
         outputs=action_len,
         n_hidden_layers=2,
-        n_hidden_units=512,
+        n_hidden_units=256,
         activation=F.relu,
         activation_last_layer=torch.tanh,
         output_weight=max_action
@@ -35,7 +35,7 @@ def get_actor_critic(state_len, action_len, max_action):
 
 
 def backbone_training(env: gym.Env, train_steps, num_runs, backbone_policy, buffer_len,
-                      buffer_prefill, actor_lr, critic_lr, batch_size, eps_start, eps_end,
+                      buffer_prefill, df, actor_lr, critic_lr, batch_size, eps_start, eps_end,
                       eps_decay, collection_policy_noise, checkpoint_every, results_dir,
                       exp_name_prefix='', exp_name_suffix=''):
     """This experiment pre-trains the actor network (and optionally the critic), then runs the TD3
@@ -72,7 +72,7 @@ def backbone_training(env: gym.Env, train_steps, num_runs, backbone_policy, buff
         td3_algorithm = td3.TD3(
             critic, actor, training_steps=train_steps, buffer_len=buffer_len,
             max_action=max_action, min_action=-max_action, critic_lr=critic_lr,
-            actor_lr=actor_lr, evaluate_every=-1, backbone_policy=backbone_policy,
+            actor_lr=actor_lr, df=df, evaluate_every=-1, backbone_policy=backbone_policy,
             epsilon_start=eps_start, epsilon_end=eps_end, batch_size=batch_size,
             epsilon_decay_schedule=eps_decay, checkpoint_every=checkpoint_every,
             checkpoint_dir='models/backbone/'
@@ -95,7 +95,7 @@ def backbone_training(env: gym.Env, train_steps, num_runs, backbone_policy, buff
 
 
 def standard_training(env: gym.Env, train_steps, num_runs, buffer_len, buffer_prefill, actor_lr,
-                      critic_lr, batch_size, eps_start, eps_end, eps_decay, checkpoint_every,
+                      critic_lr, df, batch_size, eps_start, eps_end, eps_decay, checkpoint_every,
                       results_dir, exp_name_prefix='', exp_name_suffix=''):
     """Perform standard training with TD3. and saves the results.
 
@@ -119,8 +119,9 @@ def standard_training(env: gym.Env, train_steps, num_runs, buffer_len, buffer_pr
         # Train
         td3_algorithm = td3.TD3(critic, actor, training_steps=train_steps, max_action=max_action,
                                 min_action=-max_action, critic_lr=critic_lr, actor_lr=actor_lr,
-                                batch_size=batch_size, evaluate_every=-1, epsilon_start=eps_start,
-                                epsilon_end=eps_end, epsilon_decay_schedule=eps_decay,
+                                df=df, batch_size=batch_size, evaluate_every=-1,
+                                epsilon_start=eps_start, epsilon_end=eps_end,
+                                epsilon_decay_schedule=eps_decay,
                                 checkpoint_every=checkpoint_every,
                                 checkpoint_dir='models/standard/')
         prefiller = replay_buffers.BufferPrefiller(num_transitions=buffer_prefill)
@@ -138,7 +139,7 @@ def standard_training(env: gym.Env, train_steps, num_runs, buffer_len, buffer_pr
 
 
 def continue_training(env: gym.Env, train_steps, num_runs, actor_net, critic_net, buffer_len,
-                      buffer_prefill, actor_lr, critic_lr, batch_size, eps_start, eps_end,
+                      buffer_prefill, actor_lr, critic_lr, df, batch_size, eps_start, eps_end,
                       eps_decay, checkpoint_every, results_dir, exp_name_prefix='',
                       exp_name_suffix=''):
     """Continue training the given networks and saves the results.
@@ -163,8 +164,9 @@ def continue_training(env: gym.Env, train_steps, num_runs, actor_net, critic_net
         # Train
         td3_algorithm = td3.TD3(critic, actor, training_steps=train_steps, max_action=max_action,
                                 min_action=-max_action, critic_lr=critic_lr, batch_size=batch_size,
-                                actor_lr=actor_lr, evaluate_every=-1, epsilon_start=eps_start,
-                                epsilon_end=eps_end, epsilon_decay_schedule=eps_decay,
+                                actor_lr=actor_lr, df=df, evaluate_every=-1,
+                                epsilon_start=eps_start, epsilon_end=eps_end,
+                                epsilon_decay_schedule=eps_decay,
                                 checkpoint_every=checkpoint_every,
                                 checkpoint_dir='models/continue/')
         prefiller = replay_buffers.BufferPrefiller(num_transitions=buffer_prefill)
@@ -182,7 +184,7 @@ def continue_training(env: gym.Env, train_steps, num_runs, actor_net, critic_net
 
 
 def backbone_experiment(env, train_steps, num_runs, actor_path, critic_path, exp_suffix,
-                        buffer_len, buffer_prefill, actor_lr, critic_lr, batch_size, eps_start,
+                        buffer_len, buffer_prefill, actor_lr, critic_lr, df, batch_size, eps_start,
                         eps_end, eps_decay, collection_policy_noise, checkpoint_every):
     # Load actor and critic that we want to use
     actor = torch.load(actor_path)
@@ -192,7 +194,7 @@ def backbone_experiment(env, train_steps, num_runs, actor_path, critic_path, exp
     continue_training(
         env=env, train_steps=train_steps, num_runs=num_runs, actor_net=actor, critic_net=critic,
         buffer_len=buffer_len, buffer_prefill=buffer_prefill, actor_lr=actor_lr,
-        batch_size=batch_size, critic_lr=critic_lr, eps_start=eps_start, eps_end=eps_end,
+        batch_size=batch_size, critic_lr=critic_lr, df=df, eps_start=eps_start, eps_end=eps_end,
         eps_decay=eps_decay, checkpoint_every=checkpoint_every,
         results_dir=f'experiment_results/td3/continue/{env.unwrapped.spec.id}/',
         exp_name_suffix=exp_suffix,
@@ -209,7 +211,7 @@ def backbone_experiment(env, train_steps, num_runs, actor_path, critic_path, exp
     # Train with backbone
     backbone_training(
         env=env, train_steps=train_steps, num_runs=num_runs, backbone_policy=model_policy,
-        buffer_len=buffer_len, buffer_prefill=buffer_prefill, actor_lr=actor_lr,
+        buffer_len=buffer_len, buffer_prefill=buffer_prefill, actor_lr=actor_lr, df=df,
         batch_size=batch_size, critic_lr=critic_lr, eps_start=eps_start, eps_end=eps_end,
         eps_decay=eps_decay,
         results_dir=f'experiment_results/td3/backbone/{env.unwrapped.spec.id}/',
@@ -220,15 +222,16 @@ def backbone_experiment(env, train_steps, num_runs, actor_path, critic_path, exp
 
 if __name__ == '__main__':
     NUM_RUNS = 1
-    TRAINING_STEPS = 150000
-    BUFFER_PREFILL_STEPS = 30000
+    TRAINING_STEPS = 100000
+    BUFFER_PREFILL_STEPS = 20000
     BUFFER_LEN = TRAINING_STEPS + BUFFER_PREFILL_STEPS
     COLLECTION_POLICY_NOISE = 2
     CRITIC_LR = 1e-3
     ACTOR_LR = 1e-3
+    DISCOUNT_FACTOR = 0.999
     BATCH_SIZE = 100
-    EPSILON_START = 0.05
-    EPSILON_END = 0.05
+    EPSILON_START = 0.1
+    EPSILON_END = 0.1
     EPSILON_DECAY_SCHEDULE = 'const'
     CHECKPOINT_EVERY = 5000
 
@@ -236,8 +239,8 @@ if __name__ == '__main__':
 
     standard_training(env=_env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS,
                       buffer_len=BUFFER_LEN, buffer_prefill=BUFFER_PREFILL_STEPS,
-                      actor_lr=ACTOR_LR, critic_lr=CRITIC_LR, batch_size=BATCH_SIZE,
-                      eps_start=EPSILON_START,  eps_end=EPSILON_END,
+                      actor_lr=ACTOR_LR, critic_lr=CRITIC_LR, df=DISCOUNT_FACTOR,
+                      batch_size=BATCH_SIZE, eps_start=EPSILON_START,  eps_end=EPSILON_END,
                       eps_decay=EPSILON_DECAY_SCHEDULE, checkpoint_every=CHECKPOINT_EVERY,
                       results_dir=f'experiment_results/td3/standard/{_env.unwrapped.spec.id}/')
 
