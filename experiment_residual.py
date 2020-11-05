@@ -227,7 +227,7 @@ def backbone_experiment(env, train_steps, num_runs, actor_path, critic_path, exp
 if __name__ == '__main__':
     NUM_RUNS = 5
     TRAINING_STEPS = 100000
-    BUFFER_PREFILL_STEPS = 15000
+    BUFFER_PREFILL_STEPS = 25000
     BUFFER_LEN = TRAINING_STEPS + BUFFER_PREFILL_STEPS
     COLLECTION_POLICY_NOISE = 1.5
     CRITIC_LR = 5e-4
