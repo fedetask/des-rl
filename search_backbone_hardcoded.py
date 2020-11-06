@@ -22,7 +22,7 @@ if __name__ == '__main__':
 
     _env = gym.make('Pendulum-v0')
 
-    for prefill_nosie in [0.0, 0.2, 1.0]:
+    for prefill_nosie in [0.05, 0.2, 0.5, 1.0, 2.0]:
         for eps_start in [0.2, 0.1, 0.05]:
             backbone_training(
                 env=_env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS,
@@ -32,5 +32,5 @@ if __name__ == '__main__':
                 eps_end=EPSILON_END, eps_decay=EPSILON_DECAY_SCHEDULE,
                 collection_policy_noise=prefill_nosie, checkpoint_every=CHECKPOINT_EVERY,
                 results_dir=f'experiment_results/td3/backbone/{_env.unwrapped.spec.id}/',
-                exp_name_suffix=f'_prefill_{BUFFER_PREFILL}_noise_{prefill_nosie}'
+                exp_name_suffix=f'_prefill_{BUFFER_PREFILL}_noise_{prefill_nosie}_hardcoded'
             )
