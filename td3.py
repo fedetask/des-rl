@@ -301,10 +301,10 @@ if __name__ == '__main__':
     import networks
     from matplotlib import pyplot as plt
 
-    ENV_NAME = 'LunarLanderContinuous-v2'
-    TRAIN_STEPS = 100000
-    PREFILL_STEPS = 10000
-    SHOW_PLOT = False
+    ENV_NAME = 'BipedalWalker-v3'
+    TRAIN_STEPS = 1000000
+    PREFILL_STEPS = 30000
+    SHOW_PLOT = True
 
     env = gym.make(ENV_NAME)
     action_len = env.action_space.shape[0]
@@ -315,7 +315,7 @@ if __name__ == '__main__':
         inputs=action_len+state_len,
         outputs=1,
         n_hidden_layers=4,
-        n_hidden_units=128,
+        n_hidden_units=256,
         activation=F.relu
     ).to(device)
 
@@ -323,7 +323,7 @@ if __name__ == '__main__':
         inputs=state_len,
         outputs=action_len,
         n_hidden_layers=4,
-        n_hidden_units=128,
+        n_hidden_units=256,
         activation=F.relu,
         activation_last_layer=torch.tanh,
         output_weight=max_action
@@ -344,12 +344,12 @@ if __name__ == '__main__':
         tau=0.005,
         target_noise=0.2,
         target_noise_clip=0.5,
-        epsilon_start=0.1,
-        epsilon_end=0.1,
-        epsilon_decay_schedule='const',
+        epsilon_start=0.2,
+        epsilon_end=0.05,
+        epsilon_decay_schedule='lin',
         dtype=torch.float,
         evaluate_every=-1,
-        checkpoint_every=2000
+        checkpoint_every=5000
     )
     prefiller = replay_buffers.BufferPrefiller(num_transitions=PREFILL_STEPS)
     train_result = td3.train(env)
