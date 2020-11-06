@@ -260,7 +260,7 @@ if __name__ == '__main__':
         for prefill_nosie in [0.0, 0.2, 1.0]:
             backbone_training(
                 env=_env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS,
-                backbone_policy=backbone_policy, buffer_len=BUFFER_LEN, buffer_prefill=prefill,
+                backbone_policy=backbone_policy_model, buffer_len=BUFFER_LEN, buffer_prefill=prefill,
                 df=DISCOUNT_FACTOR, actor_lr=ACTOR_LR, critic_lr=CRITIC_LR, batch_size=BATCH_SIZE,
                 eps_start=EPSILON_START, eps_end=EPSILON_END, eps_decay=EPSILON_DECAY_SCHEDULE,
                 collection_policy_noise=prefill_nosie, checkpoint_every=CHECKPOINT_EVERY,
