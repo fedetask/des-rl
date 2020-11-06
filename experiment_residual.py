@@ -227,7 +227,7 @@ def backbone_experiment(env, train_steps, num_runs, actor_path, critic_path, exp
 
 
 if __name__ == '__main__':
-    NUM_RUNS = 15
+    NUM_RUNS = 10
     TRAINING_STEPS = 15000
     BUFFER_PREFILL_CONTINUE = 1000
     BUFFER_PREFILL_BACKBONE = 1000
@@ -246,34 +246,24 @@ if __name__ == '__main__':
 
     _env = gym.make('Pendulum-v0')
 
-    """
-    standard_training(
-        env=_env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS,
-        buffer_len=BUFFER_LEN, buffer_prefill=BUFFER_PREFILL_STEPS,
-        actor_lr=ACTOR_LR, critic_lr=CRITIC_LR, df=DISCOUNT_FACTOR, batch_size=BATCH_SIZE,
-        eps_start=EPSILON_START, eps_end=EPSILON_END, eps_decay=EPSILON_DECAY_SCHEDULE,
-        checkpoint_every=CHECKPOINT_EVERY,
-        exp_name_suffix=f'_eps_{EPSILON_START}_to_{EPSILON_END}_prefill_{BUFFER_PREFILL_STEPS}',
-        results_dir=f'experiment_results/td3/standard/{_env.unwrapped.spec.id}/'
-    )
-    """
+    actor = torch.load('models/standard/Pendulum-v0/actor_5000')
+    critic = torch.load('models/standard/Pendulum-v0/critic_5000')[0]
 
-    actor_path = 'models/standard/Pendulum-v0/actor_5000'
-    critic_path = 'models/standard/Pendulum-v0/critic_5000'
+    def backbone_policy_model(state):
+        with torch.no_grad():
+            action = actor(
+                torch.tensor(state).unsqueeze(0).float()
+            )[0].detach().numpy()
+        return action
 
-    backbone_experiment(
-        env=_env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS, actor_path=actor_path,
-        critic_path=critic_path, buffer_len=BUFFER_LEN,
-        buffer_prefill_backbone=BUFFER_PREFILL_BACKBONE,
-        buffer_prefill_continue=BUFFER_PREFILL_CONTINUE,
-        actor_lr=ACTOR_LR, critic_lr=CRITIC_LR, df=DISCOUNT_FACTOR, batch_size=BATCH_SIZE,
-        eps_start=EPSILON_START, eps_end=EPSILON_END, eps_decay=EPSILON_DECAY_SCHEDULE,
-        collection_policy_noise_continue=COLLECTION_POLICY_NOISE_CONTINUE,
-        collection_policy_noise_backbone=COLLECTION_POLICY_NOISE_BACKBONE,
-        checkpoint_every=CHECKPOINT_EVERY,
-        exp_suffix=f'prefill_continue_{BUFFER_PREFILL_CONTINUE}_prefill_backbone_'
-                   f'{BUFFER_PREFILL_BACKBONE}_noise_continue_{COLLECTION_POLICY_NOISE_CONTINUE}'
-                   f'_noise_backbone_{COLLECTION_POLICY_NOISE_BACKBONE}_'
-                   f'_eps_{EPSILON_START}_to_{EPSILON_END}_{EPSILON_DECAY_SCHEDULE}'
-    )
-
+    for prefill in [0, 2000]:
+        for prefill_nosie in [0.0, 0.2, 1.0]:
+            backbone_training(
+                env=_env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS,
+                backbone_policy=backbone_policy, buffer_len=BUFFER_LEN, buffer_prefill=prefill,
+                df=DISCOUNT_FACTOR, actor_lr=ACTOR_LR, critic_lr=CRITIC_LR, batch_size=BATCH_SIZE,
+                eps_start=EPSILON_START, eps_end=EPSILON_END, eps_decay=EPSILON_DECAY_SCHEDULE,
+                collection_policy_noise=prefill_nosie, checkpoint_every=CHECKPOINT_EVERY,
+                results_dir=f'experiment_results/td3/backbone/{_env.unwrapped.spec.id}/',
+                exp_name_suffix=f'_prefill_{prefill}_noise_{prefill_nosie}'
+            )
