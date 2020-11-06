@@ -187,8 +187,10 @@ def continue_training(env: gym.Env, train_steps, num_runs, actor_net, critic_net
 
 
 def backbone_experiment(env, train_steps, num_runs, actor_path, critic_path, exp_suffix,
-                        buffer_len, buffer_prefill, actor_lr, critic_lr, df, batch_size, eps_start,
-                        eps_end, eps_decay, collection_policy_noise, checkpoint_every):
+                        buffer_len, buffer_prefill_continue, buffer_prefill_backbone, actor_lr,
+                        critic_lr, df, batch_size, eps_start, eps_end, eps_decay,
+                        collection_policy_noise_backbone, collection_policy_noise_continue,
+                        checkpoint_every):
     # Load actor and critic that we want to use
     actor = torch.load(actor_path)
     critic = torch.load(critic_path)[0]
@@ -204,9 +206,9 @@ def backbone_experiment(env, train_steps, num_runs, actor_path, critic_path, exp
     # Continue their training (makes a copy of actor and critic so they are not modified)
     continue_training(
         env=env, train_steps=train_steps, num_runs=num_runs, actor_net=actor, critic_net=critic,
-        buffer_len=buffer_len, buffer_prefill=buffer_prefill, actor_lr=actor_lr,
+        buffer_len=buffer_len, buffer_prefill=buffer_prefill_continue, actor_lr=actor_lr,
         batch_size=batch_size, critic_lr=critic_lr, df=df, eps_start=eps_start, eps_end=eps_end,
-        eps_decay=eps_decay, collection_policy_noise=eps_start,
+        eps_decay=eps_decay, collection_policy_noise=collection_policy_noise_continue,
         collection_policy=model_policy, checkpoint_every=checkpoint_every,
         results_dir=f'experiment_results/td3/continue/{env.unwrapped.spec.id}/',
         exp_name_suffix=exp_suffix,
@@ -215,21 +217,21 @@ def backbone_experiment(env, train_steps, num_runs, actor_path, critic_path, exp
     # Train with backbone
     backbone_training(
         env=env, train_steps=train_steps, num_runs=num_runs, backbone_policy=model_policy,
-        buffer_len=buffer_len, buffer_prefill=buffer_prefill, actor_lr=actor_lr, df=df,
+        buffer_len=buffer_len, buffer_prefill=buffer_prefill_backbone, actor_lr=actor_lr, df=df,
         batch_size=batch_size, critic_lr=critic_lr, eps_start=eps_start, eps_end=eps_end,
         eps_decay=eps_decay,
         results_dir=f'experiment_results/td3/backbone/{env.unwrapped.spec.id}/',
-        collection_policy_noise=collection_policy_noise, checkpoint_every=checkpoint_every,
+        collection_policy_noise=collection_policy_noise_backbone, checkpoint_every=checkpoint_every,
         exp_name_suffix=exp_suffix
     )
 
 
 if __name__ == '__main__':
-    NUM_RUNS = 10
+    NUM_RUNS = 15
     TRAINING_STEPS = 15000
-    BUFFER_PREFILL_STEPS = 2000
-    BUFFER_LEN = TRAINING_STEPS + BUFFER_PREFILL_STEPS
-    COLLECTION_POLICY_NOISE = 1
+    BUFFER_PREFILL_CONTINUE = 1000
+    BUFFER_PREFILL_BACKBONE = 1000
+    BUFFER_LEN = 100000
     CRITIC_LR = 1e-3
     ACTOR_LR = 1e-3
     UPDATE_NET_EVERY = 2
@@ -238,6 +240,8 @@ if __name__ == '__main__':
     EPSILON_START = 0.2
     EPSILON_END = 0.0
     EPSILON_DECAY_SCHEDULE = 'lin'
+    COLLECTION_POLICY_NOISE_BACKBONE = EPSILON_START
+    COLLECTION_POLICY_NOISE_CONTINUE = EPSILON_START
     CHECKPOINT_EVERY = 1000
 
     _env = gym.make('Pendulum-v0')
@@ -259,10 +263,17 @@ if __name__ == '__main__':
 
     backbone_experiment(
         env=_env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS, actor_path=actor_path,
-        critic_path=critic_path, buffer_len=BUFFER_LEN, buffer_prefill=BUFFER_PREFILL_STEPS,
+        critic_path=critic_path, buffer_len=BUFFER_LEN,
+        buffer_prefill_backbone=BUFFER_PREFILL_BACKBONE,
+        buffer_prefill_continue=BUFFER_PREFILL_CONTINUE,
         actor_lr=ACTOR_LR, critic_lr=CRITIC_LR, df=DISCOUNT_FACTOR, batch_size=BATCH_SIZE,
         eps_start=EPSILON_START, eps_end=EPSILON_END, eps_decay=EPSILON_DECAY_SCHEDULE,
-        collection_policy_noise=COLLECTION_POLICY_NOISE, checkpoint_every=CHECKPOINT_EVERY,
-        exp_suffix=f'_actor_10000__eps_{EPSILON_START}_to_{EPSILON_END}_prefill_{BUFFER_PREFILL_STEPS}'
+        collection_policy_noise_continue=COLLECTION_POLICY_NOISE_CONTINUE,
+        collection_policy_noise_backbone=COLLECTION_POLICY_NOISE_BACKBONE,
+        checkpoint_every=CHECKPOINT_EVERY,
+        exp_suffix=f'prefill_continue_{BUFFER_PREFILL_CONTINUE}_prefill_backbone_'
+                   f'{BUFFER_PREFILL_BACKBONE}_noise_continue_{COLLECTION_POLICY_NOISE_CONTINUE}'
+                   f'_noise_backbone_{COLLECTION_POLICY_NOISE_BACKBONE}_'
+                   f'_eps_{EPSILON_START}_to_{EPSILON_END}_{EPSILON_DECAY_SCHEDULE}'
     )
 
