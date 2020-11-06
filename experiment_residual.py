@@ -267,5 +267,5 @@ if __name__ == '__main__':
                     eps_end=EPSILON_END, eps_decay=EPSILON_DECAY_SCHEDULE,
                     collection_policy_noise=prefill_nosie, checkpoint_every=CHECKPOINT_EVERY,
                     results_dir=f'experiment_results/td3/backbone/{_env.unwrapped.spec.id}/',
-                    exp_name_suffix=f'_prefill_{prefill}_noise_{prefill_nosie}'
+                    exp_name_suffix=f'_prefill_{prefill}_noise_{prefill_nosie}_eps_{eps_start}'
                 )
