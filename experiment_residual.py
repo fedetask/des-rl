@@ -37,7 +37,7 @@ def get_actor_critic(state_len, action_len, max_action):
 def backbone_training(env: gym.Env, train_steps, num_runs, backbone_policy, buffer_len,
                       buffer_prefill, df, actor_lr, critic_lr, batch_size, eps_start, eps_end,
                       eps_decay, collection_policy_noise, checkpoint_every, results_dir,
-                      exp_name_prefix='', exp_name_suffix=''):
+                      exp_name_prefix='', exp_name_suffix='', checkpoint_subdir='/'):
     """This experiment pre-trains the actor network (and optionally the critic), then runs the TD3
     algorithm using the pre-trained actor (critic).
 
@@ -55,6 +55,7 @@ def backbone_training(env: gym.Env, train_steps, num_runs, backbone_policy, buff
         warn = 'Warning: ' + str(exp_name) + ' already exists. Skipping.'
         print(warn)
         return warn
+    checkpoint_dir = os.path.join('models/backbone/', checkpoint_subdir)
 
     print('Starting experiment: ' + exp_name)
 
@@ -75,7 +76,7 @@ def backbone_training(env: gym.Env, train_steps, num_runs, backbone_policy, buff
             actor_lr=actor_lr, df=df, evaluate_every=-1, backbone_policy=backbone_policy,
             epsilon_start=eps_start, epsilon_end=eps_end, batch_size=batch_size,
             epsilon_decay_schedule=eps_decay, checkpoint_every=checkpoint_every,
-            checkpoint_dir='models/backbone/'
+            checkpoint_dir=checkpoint_dir
         )
         prefiller = replay_buffers.BufferPrefiller(
             num_transitions=buffer_prefill, collection_policy=backbone_policy,
@@ -96,7 +97,7 @@ def backbone_training(env: gym.Env, train_steps, num_runs, backbone_policy, buff
 def standard_training(env: gym.Env, train_steps, num_runs, buffer_len, buffer_prefill, actor_lr,
                       critic_lr, df, batch_size, eps_start, eps_end, eps_decay, checkpoint_every,
                       results_dir, update_net_every=2, exp_name_prefix='', exp_name_suffix='',
-                      collection_policy=None, collection_policy_noise=None):
+                      collection_policy=None, collection_policy_noise=None, checkpoint_subdir='/'):
     """Perform standard training with TD3. and saves the results.
 
     Args:
@@ -114,6 +115,8 @@ def standard_training(env: gym.Env, train_steps, num_runs, buffer_len, buffer_pr
     train_scores = []
     train_eval_scores = []
     for run in range(num_runs):
+        checkpoint_dir = os.path.join('models/standard/', f'{checkpoint_subdir}_{run}')
+
         actor, critic = get_actor_critic(state_len, action_len, max_action)
 
         # Train
@@ -124,7 +127,7 @@ def standard_training(env: gym.Env, train_steps, num_runs, buffer_len, buffer_pr
                                 epsilon_decay_schedule=eps_decay,
                                 update_targets_every=update_net_every,
                                 checkpoint_every=checkpoint_every,
-                                checkpoint_dir='models/standard/')
+                                checkpoint_dir=checkpoint_dir)
         prefiller = replay_buffers.BufferPrefiller(
             num_transitions=buffer_prefill, collection_policy=collection_policy,
             collection_policy_noise=collection_policy_noise, min_action=-max_action,
@@ -145,7 +148,7 @@ def standard_training(env: gym.Env, train_steps, num_runs, buffer_len, buffer_pr
 def continue_training(env: gym.Env, train_steps, num_runs, actor_net, critic_net, buffer_len,
                       buffer_prefill, actor_lr, critic_lr, df, batch_size, eps_start, eps_end,
                       collection_policy_noise, collection_policy, eps_decay, checkpoint_every,
-                      results_dir, exp_name_prefix='', exp_name_suffix=''):
+                      results_dir, exp_name_prefix='', exp_name_suffix='', checkpoint_subdir='/'):
     """Continue training the given networks and saves the results.
 
     Args:
@@ -158,7 +161,7 @@ def continue_training(env: gym.Env, train_steps, num_runs, actor_net, critic_net
         exp_name_prefix (str): Prefix for the experiment name.
         exp_name_suffix (str): Suffix for experiment name.
     """
-    params = locals()
+    checkpoint_dir = os.path.join('models/continue/', checkpoint_subdir)
     max_action = env.action_space.high[0]
 
     train_scores = []
@@ -173,7 +176,7 @@ def continue_training(env: gym.Env, train_steps, num_runs, actor_net, critic_net
                                 epsilon_start=eps_start, epsilon_end=eps_end,
                                 epsilon_decay_schedule=eps_decay,
                                 checkpoint_every=checkpoint_every,
-                                checkpoint_dir='models/continue/')
+                                checkpoint_dir=checkpoint_dir)
         prefiller = replay_buffers.BufferPrefiller(
             num_transitions=buffer_prefill, collection_policy=collection_policy,
             collection_policy_noise=collection_policy_noise, min_action=-max_action,
@@ -249,28 +252,11 @@ if __name__ == '__main__':
 
     _env = gym.make('Pendulum-v0')
 
-    standard_training(
-        env=_env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS,
-        buffer_len=BUFFER_LEN, buffer_prefill=BUFFER_PREFILL, actor_lr=ACTOR_LR,
-        critic_lr=CRITIC_LR, df=DISCOUNT_FACTOR, batch_size=BATCH_SIZE,
-        eps_start=EPSILON_START, eps_end=EPSILON_END,
-        eps_decay=EPSILON_DECAY_SCHEDULE, checkpoint_every=CHECKPOINT_EVERY,
-        results_dir=f'experiment_results/td3/standard/{_env.unwrapped.spec.id}/',
-        exp_name_suffix=f'_prefill_{BUFFER_PREFILL}_lr_{ACTOR_LR}_bsize_{BATCH_SIZE}_eps_'
-                        f'{EPSILON_START}_to_{EPSILON_END}_{EPSILON_DECAY_SCHEDULE}_random_prefill'
-        )
-
-    standard_training(
-        env=_env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS,
-        buffer_len=BUFFER_LEN, buffer_prefill=BUFFER_PREFILL, actor_lr=ACTOR_LR,
-        critic_lr=CRITIC_LR, df=DISCOUNT_FACTOR, batch_size=BATCH_SIZE,
-        eps_start=EPSILON_START, eps_end=EPSILON_END,
-        eps_decay=EPSILON_DECAY_SCHEDULE, checkpoint_every=CHECKPOINT_EVERY,
-        results_dir=f'experiment_results/td3/standard/{_env.unwrapped.spec.id}/',
-        exp_name_suffix=f'_prefill_{BUFFER_PREFILL}_lr_{ACTOR_LR}_bsize_{BATCH_SIZE}_eps_'
-                        f'{EPSILON_START}_to_{EPSILON_END}_{EPSILON_DECAY_SCHEDULE}_policy_prefill',
-        collection_policy=hardcoded_policies.pendulum,
-        collection_policy_noise=COLLECTION_POLICY_NOISE,
-        )
-
-
+    standard_training(env=_env, train_steps=TRAINING_STEPS * 2, num_runs=NUM_RUNS,
+                      buffer_len=BUFFER_LEN, buffer_prefill=BUFFER_PREFILL, actor_lr=ACTOR_LR,
+                      critic_lr=CRITIC_LR, df=DISCOUNT_FACTOR, batch_size=BATCH_SIZE,
+                      eps_start=EPSILON_START, eps_end=EPSILON_END,
+                      eps_decay=EPSILON_DECAY_SCHEDULE, checkpoint_every=CHECKPOINT_EVERY,
+                      results_dir=f'experiment_results/td3/standard/'
+                                  f'{_env.unwrapped.spec.id}/backbone_vs_continue/',
+                      checkpoint_subdir='backbone_vs_continue')
