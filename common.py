@@ -169,3 +169,19 @@ def load_models(dir, device='cpu'):
     for file in os.listdir(dir):
         models[file] = torch.load(os.path.join(dir, file), device)
     return models
+
+
+def backbonize(func):
+    """Take a funciton that maps a state to an action and returns a function that maps a batch of
+    state tensors to a batch of action tensors.
+    """
+    if func is None:
+        return None
+
+    def _to_torch(state_batch):
+        actions = []
+        for state in state_batch:
+            action = func(state.detach().numpy())
+            actions.append(torch.tensor(action))
+        return torch.stack(actions)
+    return _to_torch

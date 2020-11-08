@@ -166,7 +166,9 @@ class TD3TargetComputer(BaseTargetComputer):
                  df=0.99,
                  target_noise=0.2,
                  noise_clip=0.5,
-                 dtype=torch.float):
+                 dtype=torch.float,
+                 backbone_actor=None,
+                 backbone_critic=None):
         """Instantiate the TD3 target computer.
 
         Args:
@@ -192,6 +194,10 @@ class TD3TargetComputer(BaseTargetComputer):
         self.df = df
         self.target_noise = target_noise
         self.noise_clip = noise_clip
+        self.backbone_actor = backbone_actor
+        self.backbone_critic = backbone_critic
+        if self.backbone_critic is not None:
+            assert self.backbone_actor is not None, 'Backbone critic cannot be used without actor.'
 
         # Conversions of numpy.ndarray to Tensors
         if isinstance(self.max_action, np.ndarray):
@@ -229,16 +235,31 @@ class TD3TargetComputer(BaseTargetComputer):
             noise = common.clamp(noise, -self.noise_clip, self.noise_clip)
             # Compute target actions and clamping if a max range is specified.
             if next_states_idx.shape[0] > 0:
-                next_action = self.dqac_nets.predict_target_actions(next_states_ts) + noise
-                if self.max_action is not None:
-                    next_action = common.clamp(next_action, self.min_action, self.max_action)
-                # Compute target values
-                target_values = self.dqac_nets.predict_targets(
-                    next_states_ts,
-                    next_action,
-                    mode='min'
-                )
-                rewards_ts[next_states_idx_ts] += self.df * target_values
+                # Compute standard next actions and correspondent values
+                net_action_ts = self.dqac_nets.predict_target_actions(next_states_ts) + noise
+
+                # If a backbone critic and actor are given, compute residual targets
+                if self.backbone_critic is not None:
+                    backbone_actions = self.backbone_actor(next_states_ts)
+                    backbone_target_values = self.backbone_critic(next_states_ts, backbone_actions)
+                    res_action_ts = common.clamp(  # Clamp residual action such that the total
+                        net_action_ts,             # action is within the valid range
+                        self.min_action - backbone_actions,
+                        self.max_action - backbone_actions)
+                    res_target_values = self.dqac_nets.predict_targets(
+                        next_states_ts,
+                        res_action_ts,
+                        mode='min'
+                    )
+                    tot_target_values = res_target_values + backbone_target_values
+                else:  # Otherwise just use the critic network predictions
+                    net_action_ts = torch.clamp(net_action_ts, self.min_action, self.max_action)
+                    tot_target_values = self.dqac_nets.predict_targets(
+                        next_states_ts,
+                        net_action_ts,
+                        mode='min'
+                    )
+                rewards_ts[next_states_idx_ts] += self.df * tot_target_values
         return rewards_ts.detach().numpy()
 
 
@@ -320,7 +341,9 @@ class TD3Trainer(BaseTrainer):
                  critic_lr=0.5e-3,
                  actor_lr=0.5e-3,
                  actor_beta=None,
-                 dtype=torch.float):
+                 dtype=torch.float,
+                 backbone_actor=None,
+                 backbone_critic=None):
         """Instantiate the TD3 trainer.
 
         Args:
@@ -344,6 +367,8 @@ class TD3Trainer(BaseTrainer):
         self.loss = loss
         self.actor_beta = actor_beta
         self._actor_lr = actor_lr
+        self.backbone_actor = backbone_actor
+        self.backbone_critic = backbone_critic
         if critic_optimizer is None:
             self.critic_optimizer = torch.optim.Adam(
                 dqac_networks.get_trainable_params()[0],
@@ -383,9 +408,10 @@ class TD3Trainer(BaseTrainer):
         targets_ts = torch.tensor(targets, dtype=self.dtype)
 
         q_values = self.dqac_networks.predict_values(states_ts, actions_ts, mode='all')
+        if self.backbone_actor is not None:
+            backbone_values = self.backbone_actor(states_ts)[:, None, :]
+            q_values += backbone_values
         n_nets = q_values.shape[1]
-        # TODO: How to extend to other losses?
-        # critic_loss = q_values.size()[1] * self.loss(q_values, targets_ts[:, None, :])
         squared_errors = ((q_values - targets_ts[:, None, :]) ** 2).squeeze().sum(-1) / n_nets
         if weights is not None:
             squared_errors *= torch.tensor(weights, dtype=self.dtype)
@@ -396,6 +422,7 @@ class TD3Trainer(BaseTrainer):
 
         actor_loss = None
         if train_actor:
+            # Based on the assumption that Q(s, a) is separable wrt backbone critic and critic net
             act = self.dqac_networks.predict_actions(states_ts)
             actor_loss = - self.dqac_networks.predict_values(states_ts, act, 'rand').mean()
             self.actor_optimizer.zero_grad()

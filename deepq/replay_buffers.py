@@ -16,7 +16,7 @@ import abc
 import numbers
 
 import numpy as np
-
+import torch
 
 # --------------------------------------- REPLAY BUFFERS ------------------------------------------#
 
@@ -238,7 +238,8 @@ class BufferPrefiller:
             if self.collection_policy is None:
                 a = env.action_space.sample()
             else:
-                a = self.collection_policy(s)
+                with torch.no_grad():
+                    a = self.collection_policy(torch.from_numpy(s).float().unsqueeze(0))[0].detach().numpy()
                 if self.collection_policy_noise is not None:
                     noise = np.random.normal(
                         0, self.collection_policy_noise, env.action_space.shape)

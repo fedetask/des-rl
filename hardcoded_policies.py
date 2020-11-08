@@ -50,14 +50,6 @@ def mountain_car_deterministic(obs):
         return np.array([+1])
 
 
-def mountain_car_explore(obs):
-    pos, vel = obs
-    if vel < 0:
-        return np.array([-1])
-    else:
-        return None
-
-
 def mountain_car_normal(obs):
     sigma = 1.0
     pos, vel = obs
@@ -129,7 +121,7 @@ if __name__ == '__main__':
     else:
         try:
             _actor = eval(args.policy[0])
-        except NameError:
+        except Exception:
             _actor = torch.load(args.policy[0], 'cpu')
 
     res = eval_policy(_actor, _env, test_episodes=args.ntest[0], render=args.render)

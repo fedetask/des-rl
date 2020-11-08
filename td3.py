@@ -17,12 +17,13 @@ device = 'cpu'
 class TD3:
 
     def __init__(self, critic_net, actor_net, training_steps, max_action=None, min_action=None,
-                 backbone_policy=None, buffer_len=100000, prioritized_replay=False, df=0.99,
-                 batch_size=128, critic_lr=0.001, actor_lr=0.001, actor_start_train_at=0,
-                 train_actor_every=2, actor_beta=None, update_targets_every=2, tau=0.005,
-                 target_noise=0.2, target_noise_clip=0.5, epsilon_start=0.15, epsilon_end=0.15,
-                 epsilon_decay_schedule='const', dtype=torch.float, evaluate_every=-1,
-                 evaluation_episodes=5, checkpoint_every=-1, checkpoint_dir='models'):
+                 backbone_actor=None, backbone_critic=None, buffer_len=100000,
+                 prioritized_replay=False, df=0.99, batch_size=128, critic_lr=0.001,
+                 actor_lr=0.001, actor_start_train_at=0, train_actor_every=2, actor_beta=None,
+                 update_targets_every=2, tau=0.005, target_noise=0.2, target_noise_clip=0.5,
+                 epsilon_start=0.15, epsilon_end=0.15, epsilon_decay_schedule='const',
+                 decay_steps=-1, dtype=torch.float, evaluate_every=-1, evaluation_episodes=5,
+                 checkpoint_every=-1, checkpoint_dir='models'):
         """Instantiate the TD3 algorithm.
 
         Args:
@@ -57,7 +58,8 @@ class TD3:
         """
         self.max_action = max_action
         self.min_action = min_action
-        self.backbone_policy = backbone_policy
+        self.backbone_actor = backbone_actor
+        self.backbone_critic = backbone_critic
         self.tau = tau  # Not private, one may want to play with it during training
         self._training_steps = training_steps
         self._prioritized_replay = prioritized_replay
@@ -67,6 +69,7 @@ class TD3:
         self._train_actor_every = train_actor_every
         self._actor_beta = actor_beta
         self._update_targets_every = update_targets_every
+        self._decay_steps = decay_steps
         self._dtype = dtype
         self._evaluate_every = evaluate_every
         self._evaluation_episodes = evaluation_episodes
@@ -88,7 +91,9 @@ class TD3:
             df=df,
             target_noise=target_noise,
             noise_clip=target_noise_clip,
-            dtype=dtype
+            dtype=dtype,
+            backbone_actor=backbone_actor,
+            backbone_critic=backbone_critic
         )
         self.trainer = computations.TD3Trainer(
             self.networks,
@@ -96,7 +101,9 @@ class TD3:
             critic_lr=critic_lr,
             actor_lr=actor_lr,
             dtype=dtype,
-            actor_beta=self._actor_beta
+            actor_beta=self._actor_beta,
+            backbone_actor=backbone_actor,
+            backbone_critic=backbone_critic
         )
         self.policy_train = policies.BaseEpsilonGaussianPolicy(
             start_epsilon=epsilon_start, end_epsilon=epsilon_end, decay_steps=training_steps,
@@ -142,12 +149,12 @@ class TD3:
         steps_range = tqdm.trange(self._training_steps, leave=True)
         state = env.reset()
         for step in steps_range:
-            if self.backbone_policy is not None:
+            if self.backbone_actor is not None:
                 action, residual = self._act(state)
             else:
                 action = self._act(state)
             next_state, reward, done, info = env.step(action)
-            if self.backbone_policy is not None:
+            if self.backbone_actor is not None:
                 step_res = self.step((state, residual, reward, next_state, done), step)
             else:
                 step_res = self.step((state, action, reward, next_state, done), step)
@@ -272,8 +279,9 @@ class TD3:
         with torch.no_grad():
             net_action = self.networks.actor_net(
                 torch.tensor(state, dtype=self._dtype, device=device).unsqueeze(0))[0]
-        if self.backbone_policy is not None:
-            backbone_action = self.backbone_policy(state)
+        if self.backbone_actor is not None:
+            backbone_action = self.backbone_actor(
+                torch.tensor(state, dtype=self._dtype).unsqueeze(0))[0].detach().cpu().numpy()
             residual = self.policy_train.act(net_action).detach().cpu().numpy()
             action = (backbone_action + residual).clip(self.min_action, self.max_action)
             return action, residual
