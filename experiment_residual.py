@@ -190,7 +190,7 @@ if __name__ == '__main__':
                 buffer_prefill=BUFFER_PREFILL, df=DISCOUNT_FACTOR, actor_lr=ACTOR_LR,
                 critic_lr=CRITIC_LR, batch_size=BATCH_SIZE, eps_start=EPSILON_START,
                 eps_end=EPSILON_END, eps_decay=EPSILON_DECAY_SCHEDULE,
-                collection_policy_noise=COLLECTION_POLICY_NOISE,
+                collection_policy_noise=COLLECTION_POLICY_NOISE, target_noise=target_noise,
                 checkpoint_every=CHECKPOINT_EVERY,
                 results_dir='experiment_results/td3/backbone/new_backbone/',
                 exp_name_suffix=f'_noise_{COLLECTION_POLICY_NOISE}_eps_{eps_start}'
