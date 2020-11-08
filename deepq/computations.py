@@ -239,27 +239,23 @@ class TD3TargetComputer(BaseTargetComputer):
                 net_action_ts = self.dqac_nets.predict_target_actions(next_states_ts) + noise
 
                 # If a backbone critic and actor are given, compute residual targets
-                if self.backbone_critic is not None:
+                if self.backbone_actor is not None:
                     backbone_actions = self.backbone_actor(next_states_ts)
-                    backbone_target_values = self.backbone_critic(next_states_ts, backbone_actions)
-                    res_action_ts = common.clamp(  # Clamp residual action such that the total
-                        net_action_ts,             # action is within the valid range
+                    net_action_ts = common.clamp(  # Clamp residual action such that the total
+                        net_action_ts,  # action is within the valid range
                         self.min_action - backbone_actions,
                         self.max_action - backbone_actions)
-                    res_target_values = self.dqac_nets.predict_targets(
-                        next_states_ts,
-                        res_action_ts,
-                        mode='min'
-                    )
-                    tot_target_values = res_target_values + backbone_target_values
-                else:  # Otherwise just use the critic network predictions
+                else:
                     net_action_ts = torch.clamp(net_action_ts, self.min_action, self.max_action)
-                    tot_target_values = self.dqac_nets.predict_targets(
-                        next_states_ts,
-                        net_action_ts,
-                        mode='min'
-                    )
-                rewards_ts[next_states_idx_ts] += self.df * tot_target_values
+
+                target_values = self.dqac_nets.predict_targets(
+                    next_states_ts,
+                    net_action_ts,
+                    mode='min'
+                )
+                if self.backbone_critic is not None:
+                    target_values += self.backbone_critic(next_states_ts, backbone_actions)
+                rewards_ts[next_states_idx_ts] += self.df * target_values
         return rewards_ts.detach().numpy()
 
 

@@ -61,7 +61,7 @@ def mountain_car_normal(obs):
 
 def pendulum(obs):
     cos, sin, vel = obs
-    left, right = np.array([-1]), np.array([1])
+    left, right = np.array([-1.0]), np.array([1.0])
     if vel >= 0:
         if cos <= 0:
             action = right
@@ -73,6 +73,20 @@ def pendulum(obs):
         else:
             action = right
     return action
+
+
+def pendulum_torch(obs):
+    left, right = torch.tensor([-1.]), torch.tensor([1.])
+    act = torch.zeros(size=[obs.shape[0]] + [1])
+    right_mask_1 = (obs[:, 2] >= 0) & (obs[:, 0] <= 0)
+    right_mask_2 = (obs[:, 2] < 0) & (obs[:, 0] > 0)
+    act[right_mask_1] = right
+    act[right_mask_2] = right
+    left_mask_1 = (obs[:, 2] >= 0) & (obs[:, 0] > 0)
+    left_mask_2 = (obs[:, 2] < 0) & (obs[:, 0] <= 0)
+    act[left_mask_1] = left
+    act[left_mask_2] = left
+    return act
 
 
 def eval_policy(policy, env, test_episodes=100, render=False, wait_key=False):
@@ -92,7 +106,7 @@ def eval_policy(policy, env, test_episodes=100, render=False, wait_key=False):
                             torch.tensor(state).unsqueeze(0).float()
                         )[0].detach().numpy()
                 else:
-                    action = policy(state)
+                    action = policy(torch.tensor(state).unsqueeze(0)).numpy()
             next_state, rew, done, info = env.step(action)
             if render:
                 env.render()

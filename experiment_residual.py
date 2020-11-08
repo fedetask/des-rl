@@ -37,7 +37,8 @@ def get_actor_critic(state_len, action_len, max_action):
 
 def backbone_training(env: gym.Env, train_steps, num_runs, backbone_policy, buffer_len,
                       buffer_prefill, df, actor_lr, critic_lr, batch_size, eps_start, eps_end,
-                      eps_decay, collection_policy_noise, checkpoint_every, results_dir,
+                      eps_decay, collection_policy_noise, target_noise, checkpoint_every,
+                      results_dir,
                       exp_name_prefix='', exp_name_suffix='', checkpoint_subdir='/'):
     """This experiment pre-trains the actor network (and optionally the critic), then runs the TD3
     algorithm using the pre-trained actor (critic).
@@ -57,7 +58,7 @@ def backbone_training(env: gym.Env, train_steps, num_runs, backbone_policy, buff
     """
     import inspect
 
-    exp_name = exp_name_prefix + '_backbone_' + exp_name_suffix
+    exp_name = exp_name_prefix + 'backbone_' + exp_name_suffix
     if os.path.exists(os.path.join(results_dir, exp_name + '.npy')):
         warn = 'Warning: ' + str(exp_name) + ' already exists. Skipping.'
         print(warn)
@@ -79,9 +80,8 @@ def backbone_training(env: gym.Env, train_steps, num_runs, backbone_policy, buff
             backbone_critic = None if backbone_policy[1] is None else torch.load(
                 backbone_policy[1].replace('%run', f'{run}'))[0]
         elif inspect.isfunction(backbone_policy[0]):
-            backbone_actor = common.backbonize(backbone_policy[0])
-            backbone_critic = None if backbone_policy[1] is None else common.backbonize(
-                backbone_policy[1])
+            backbone_actor = backbone_policy[0]
+            backbone_critic = None if backbone_policy[1] is None else backbone_policy[1]
         else:
             raise ValueError('Type for backbone_policy not understood.')
 
@@ -93,7 +93,7 @@ def backbone_training(env: gym.Env, train_steps, num_runs, backbone_policy, buff
             max_action=max_action, min_action=-max_action, critic_lr=critic_lr,
             actor_lr=actor_lr, df=df, evaluate_every=-1, backbone_actor=backbone_actor,
             backbone_critic=backbone_critic, epsilon_start=eps_start, epsilon_end=eps_end,
-            batch_size=batch_size, epsilon_decay_schedule=eps_decay,
+            batch_size=batch_size, epsilon_decay_schedule=eps_decay, target_noise=target_noise,
             checkpoint_every=checkpoint_every, checkpoint_dir=checkpoint_dir
         )
         prefiller = replay_buffers.BufferPrefiller(
@@ -176,18 +176,23 @@ if __name__ == '__main__':
     EPSILON_START = 0.2
     EPSILON_END = 0.0
     EPSILON_DECAY_SCHEDULE = 'lin'
-    COLLECTION_POLICY_NOISE = 2.0
+    COLLECTION_POLICY_NOISE = 1
     CHECKPOINT_EVERY = -1
 
     _env = gym.make('Pendulum-v0')
 
-    backbone_policy = (hardcoded_policies.pendulum, None)
-    backbone_training(env=_env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS,
-                      backbone_policy=backbone_policy, buffer_len=BUFFER_LEN,
-                      buffer_prefill=BUFFER_PREFILL, df=DISCOUNT_FACTOR, actor_lr=ACTOR_LR,
-                      critic_lr=CRITIC_LR, batch_size=BATCH_SIZE, eps_start=EPSILON_START,
-                      eps_end=EPSILON_END, eps_decay=EPSILON_DECAY_SCHEDULE,
-                      collection_policy_noise=COLLECTION_POLICY_NOISE,
-                      checkpoint_every=CHECKPOINT_EVERY,
-                      results_dir='experiment_results/td3/backbone/new_backbone/',
-                      exp_name_suffix='_test_new_backbone_both')
+    backbone_policy = (hardcoded_policies.pendulum_torch, None)
+    for eps_start in [0.2, 0.1, 0.05]:
+        for target_noise in [0.2, 0.1]:
+            backbone_training(
+                env=_env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS,
+                backbone_policy=backbone_policy, buffer_len=BUFFER_LEN,
+                buffer_prefill=BUFFER_PREFILL, df=DISCOUNT_FACTOR, actor_lr=ACTOR_LR,
+                critic_lr=CRITIC_LR, batch_size=BATCH_SIZE, eps_start=EPSILON_START,
+                eps_end=EPSILON_END, eps_decay=EPSILON_DECAY_SCHEDULE,
+                collection_policy_noise=COLLECTION_POLICY_NOISE,
+                checkpoint_every=CHECKPOINT_EVERY,
+                results_dir='experiment_results/td3/backbone/new_backbone/',
+                exp_name_suffix=f'_noise_{COLLECTION_POLICY_NOISE}_eps_{eps_start}'
+                                f'_target_noise_{target_noise}'
+            )

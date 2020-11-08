@@ -239,11 +239,13 @@ class BufferPrefiller:
                 a = env.action_space.sample()
             else:
                 with torch.no_grad():
-                    a = self.collection_policy(torch.from_numpy(s).float().unsqueeze(0))[0].detach().numpy()
+                    a = self.collection_policy(torch.from_numpy(s).float().unsqueeze(0))[0]\
+                        .detach().numpy()
                 if self.collection_policy_noise is not None:
                     noise = np.random.normal(
                         0, self.collection_policy_noise, env.action_space.shape)
-                    a = (a + noise).clip(self.min_action, self.max_action)
+                    noise = noise.clip(self.min_action - a, self.max_action - a)
+                    a = a + noise
             s_prime, r, done, info = env.step(a)
             s_prime = s_prime if not done else None
 

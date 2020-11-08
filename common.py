@@ -171,7 +171,7 @@ def load_models(dir, device='cpu'):
     return models
 
 
-def backbonize(func):
+def backbonize(func, act_shape):
     """Take a funciton that maps a state to an action and returns a function that maps a batch of
     state tensors to a batch of action tensors.
     """
@@ -179,9 +179,10 @@ def backbonize(func):
         return None
 
     def _to_torch(state_batch):
-        actions = []
-        for state in state_batch:
+        batch_shape = [state_batch.shape[0]] + [act_shape]
+        actions = torch.empty(batch_shape)
+        for i, state in enumerate(state_batch):
             action = func(state.detach().numpy())
-            actions.append(torch.tensor(action))
-        return torch.stack(actions)
+            actions[i] = torch.tensor(action)
+        return actions.float()
     return _to_torch
