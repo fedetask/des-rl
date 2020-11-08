@@ -95,7 +95,8 @@ def backbone_training(env: gym.Env, train_steps, num_runs, backbone_policy, buff
 
 def standard_training(env: gym.Env, train_steps, num_runs, buffer_len, buffer_prefill, actor_lr,
                       critic_lr, df, batch_size, eps_start, eps_end, eps_decay, checkpoint_every,
-                      results_dir, update_net_every=2, exp_name_prefix='', exp_name_suffix=''):
+                      results_dir, update_net_every=2, exp_name_prefix='', exp_name_suffix='',
+                      collection_policy=None, collection_policy_noise=None):
     """Perform standard training with TD3. and saves the results.
 
     Args:
@@ -124,7 +125,11 @@ def standard_training(env: gym.Env, train_steps, num_runs, buffer_len, buffer_pr
                                 update_targets_every=update_net_every,
                                 checkpoint_every=checkpoint_every,
                                 checkpoint_dir='models/standard/')
-        prefiller = replay_buffers.BufferPrefiller(num_transitions=buffer_prefill)
+        prefiller = replay_buffers.BufferPrefiller(
+            num_transitions=buffer_prefill, collection_policy=collection_policy,
+            collection_policy_noise=collection_policy_noise, min_action=-max_action,
+            max_action=max_action, use_residual=False
+        )
         train_res = td3_algorithm.train(env, buffer_prefiller=prefiller)
         train_scores.append(experiment_utils.Plot(
             train_res['end_steps'], train_res['rewards'], name='train'))
@@ -229,8 +234,7 @@ def backbone_experiment(env, train_steps, num_runs, actor_path, critic_path, exp
 if __name__ == '__main__':
     NUM_RUNS = 10
     TRAINING_STEPS = 15000
-    BUFFER_PREFILL_CONTINUE = 1000
-    BUFFER_PREFILL_BACKBONE = 1000
+    BUFFER_PREFILL = 2000
     BUFFER_LEN = 100000
     CRITIC_LR = 1e-3
     ACTOR_LR = 1e-3
@@ -240,32 +244,33 @@ if __name__ == '__main__':
     EPSILON_START = 0.2
     EPSILON_END = 0.0
     EPSILON_DECAY_SCHEDULE = 'lin'
-    COLLECTION_POLICY_NOISE_BACKBONE = EPSILON_START
-    COLLECTION_POLICY_NOISE_CONTINUE = EPSILON_START
+    COLLECTION_POLICY_NOISE = 2.0
     CHECKPOINT_EVERY = 1000
 
     _env = gym.make('Pendulum-v0')
 
-    actor = torch.load('models/standard/Pendulum-v0/actor_5000')
-    critic = torch.load('models/standard/Pendulum-v0/critic_5000')[0]
+    standard_training(
+        env=_env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS,
+        buffer_len=BUFFER_LEN, buffer_prefill=BUFFER_PREFILL, actor_lr=ACTOR_LR,
+        critic_lr=CRITIC_LR, df=DISCOUNT_FACTOR, batch_size=BATCH_SIZE,
+        eps_start=EPSILON_START, eps_end=EPSILON_END,
+        eps_decay=EPSILON_DECAY_SCHEDULE, checkpoint_every=CHECKPOINT_EVERY,
+        results_dir=f'experiment_results/td3/standard/{_env.unwrapped.spec.id}/',
+        exp_name_suffix=f'_prefill_{BUFFER_PREFILL}_lr_{ACTOR_LR}_bsize_{BATCH_SIZE}_eps_'
+                        f'{EPSILON_START}_to_{EPSILON_END}_{EPSILON_DECAY_SCHEDULE}_random_prefill'
+        )
 
-    def backbone_policy_model(state):
-        with torch.no_grad():
-            action = actor(
-                torch.tensor(state).unsqueeze(0).float()
-            )[0].detach().numpy()
-        return action
+    standard_training(
+        env=_env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS,
+        buffer_len=BUFFER_LEN, buffer_prefill=BUFFER_PREFILL, actor_lr=ACTOR_LR,
+        critic_lr=CRITIC_LR, df=DISCOUNT_FACTOR, batch_size=BATCH_SIZE,
+        eps_start=EPSILON_START, eps_end=EPSILON_END,
+        eps_decay=EPSILON_DECAY_SCHEDULE, checkpoint_every=CHECKPOINT_EVERY,
+        results_dir=f'experiment_results/td3/standard/{_env.unwrapped.spec.id}/',
+        exp_name_suffix=f'_prefill_{BUFFER_PREFILL}_lr_{ACTOR_LR}_bsize_{BATCH_SIZE}_eps_'
+                        f'{EPSILON_START}_to_{EPSILON_END}_{EPSILON_DECAY_SCHEDULE}_policy_prefill',
+        collection_policy=hardcoded_policies.pendulum,
+        collection_policy_noise=COLLECTION_POLICY_NOISE,
+        )
 
-    for prefill in [0, 2000]:
-        for prefill_nosie in [0.0, 0.2, 1.0]:
-            for eps_start in [0.2, 0.1, 0.05]:
-                backbone_training(
-                    env=_env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS,
-                    backbone_policy=backbone_policy_model, buffer_len=BUFFER_LEN,
-                    buffer_prefill=prefill, df=DISCOUNT_FACTOR, actor_lr=ACTOR_LR,
-                    critic_lr=CRITIC_LR, batch_size=BATCH_SIZE,eps_start=eps_start,
-                    eps_end=EPSILON_END, eps_decay=EPSILON_DECAY_SCHEDULE,
-                    collection_policy_noise=prefill_nosie, checkpoint_every=CHECKPOINT_EVERY,
-                    results_dir=f'experiment_results/td3/backbone/{_env.unwrapped.spec.id}/',
-                    exp_name_suffix=f'_prefill_{prefill}_noise_{prefill_nosie}_eps_{eps_start}'
-                )
+
