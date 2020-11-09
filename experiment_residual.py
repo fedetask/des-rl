@@ -37,8 +37,7 @@ def get_actor_critic(state_len, action_len, max_action):
 
 def backbone_training(env: gym.Env, train_steps, num_runs, backbone_policy, buffer_len,
                       buffer_prefill, df, actor_lr, critic_lr, batch_size, eps_start, eps_end,
-                      eps_decay, collection_policy_noise, target_noise, checkpoint_every,
-                      results_dir,
+                      eps_decay, collection_policy_noise, checkpoint_every, results_dir,
                       exp_name_prefix='', exp_name_suffix='', checkpoint_subdir='/'):
     """This experiment pre-trains the actor network (and optionally the critic), then runs the TD3
     algorithm using the pre-trained actor (critic).
@@ -93,7 +92,7 @@ def backbone_training(env: gym.Env, train_steps, num_runs, backbone_policy, buff
             max_action=max_action, min_action=-max_action, critic_lr=critic_lr,
             actor_lr=actor_lr, df=df, evaluate_every=-1, backbone_actor=backbone_actor,
             backbone_critic=backbone_critic, epsilon_start=eps_start, epsilon_end=eps_end,
-            batch_size=batch_size, epsilon_decay_schedule=eps_decay, target_noise=target_noise,
+            batch_size=batch_size, epsilon_decay_schedule=eps_decay,
             checkpoint_every=checkpoint_every, checkpoint_dir=checkpoint_dir
         )
         prefiller = replay_buffers.BufferPrefiller(
@@ -164,7 +163,7 @@ def standard_training(env: gym.Env, train_steps, num_runs, buffer_len, buffer_pr
 
 
 if __name__ == '__main__':
-    NUM_RUNS = 10
+    NUM_RUNS = 15
     TRAINING_STEPS = 15000
     BUFFER_PREFILL = 2000
     BUFFER_LEN = 100000
@@ -177,22 +176,32 @@ if __name__ == '__main__':
     EPSILON_END = 0.0
     EPSILON_DECAY_SCHEDULE = 'lin'
     COLLECTION_POLICY_NOISE = 1
-    CHECKPOINT_EVERY = -1
+    CHECKPOINT_EVERY = 1
 
     _env = gym.make('Pendulum-v0')
 
-    backbone_policy = (hardcoded_policies.pendulum_torch, None)
-    for eps_start in [0.2, 0.1, 0.05]:
-        for target_noise in [0.2, 0.1]:
-            backbone_training(
-                env=_env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS,
-                backbone_policy=backbone_policy, buffer_len=BUFFER_LEN,
-                buffer_prefill=BUFFER_PREFILL, df=DISCOUNT_FACTOR, actor_lr=ACTOR_LR,
-                critic_lr=CRITIC_LR, batch_size=BATCH_SIZE, eps_start=EPSILON_START,
-                eps_end=EPSILON_END, eps_decay=EPSILON_DECAY_SCHEDULE,
-                collection_policy_noise=COLLECTION_POLICY_NOISE, target_noise=target_noise,
-                checkpoint_every=CHECKPOINT_EVERY,
-                results_dir='experiment_results/td3/backbone/new_backbone/',
-                exp_name_suffix=f'_noise_{COLLECTION_POLICY_NOISE}_eps_{eps_start}'
-                                f'_target_noise_{target_noise}'
-            )
+    standard_training(
+        env=_env, train_steps=TRAINING_STEPS * 2, num_runs=NUM_RUNS, buffer_len=BUFFER_LEN,
+        buffer_prefill=BUFFER_PREFILL, actor_lr=ACTOR_LR,  critic_lr=CRITIC_LR,
+        df=DISCOUNT_FACTOR, batch_size=BATCH_SIZE,  eps_start=EPSILON_START, eps_end=EPSILON_END,
+        eps_decay=EPSILON_DECAY_SCHEDULE, checkpoint_every=CHECKPOINT_EVERY,
+        update_net_every=UPDATE_NET_EVERY,
+        results_dir=f'experiment_results/td3/standard/{_env.unwrapped.spec.id}',
+        exp_name_suffix=f'_steps_{TRAINING_STEPS*2}_eps_{EPSILON_START}',
+        checkpoint_subdir=f'steps_{TRAINING_STEPS*2}'
+    )
+
+    backbone_policy = (
+        f'models/standard/steps_{TRAINING_STEPS*2}_%run/Pendulum-v0/actor_{TRAINING_STEPS}',
+        f'models/standard/steps_{TRAINING_STEPS*2}_%run/Pendulum-v0/critic_{TRAINING_STEPS}')
+    backbone_training(
+        env=_env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS,
+        backbone_policy=backbone_policy, buffer_len=BUFFER_LEN,
+        buffer_prefill=BUFFER_PREFILL, df=DISCOUNT_FACTOR, actor_lr=ACTOR_LR,
+        critic_lr=CRITIC_LR, batch_size=BATCH_SIZE, eps_start=EPSILON_START,
+        eps_end=EPSILON_END, eps_decay=EPSILON_DECAY_SCHEDULE,
+        collection_policy_noise=COLLECTION_POLICY_NOISE,
+        checkpoint_every=CHECKPOINT_EVERY,
+        results_dir='experiment_results/td3/backbone/backbone_continue/',
+        checkpoint_subdir='backbone_continue'
+    )
