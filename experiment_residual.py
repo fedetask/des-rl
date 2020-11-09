@@ -163,7 +163,7 @@ def standard_training(env: gym.Env, train_steps, num_runs, buffer_len, buffer_pr
 
 
 if __name__ == '__main__':
-    NUM_RUNS = 15
+    NUM_RUNS = 10
     TRAINING_STEPS = 15000
     BUFFER_PREFILL = 2000
     BUFFER_LEN = 100000
@@ -176,7 +176,7 @@ if __name__ == '__main__':
     EPSILON_END = 0.0
     EPSILON_DECAY_SCHEDULE = 'lin'
     COLLECTION_POLICY_NOISE = 1
-    CHECKPOINT_EVERY = 1
+    CHECKPOINT_EVERY = 2500
 
     _env = gym.make('Pendulum-v0')
 
