@@ -181,20 +181,23 @@ if __name__ == '__main__':
 
     _env = gym.make('Pendulum-v0')
 
+    """
     standard_training(
-        env=_env, train_steps=TRAINING_STEPS * 2, num_runs=NUM_RUNS, buffer_len=BUFFER_LEN,
+        env=_env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS, buffer_len=BUFFER_LEN,
         buffer_prefill=BUFFER_PREFILL, actor_lr=ACTOR_LR,  critic_lr=CRITIC_LR,
         df=DISCOUNT_FACTOR, batch_size=BATCH_SIZE,  eps_start=EPSILON_START, eps_end=EPSILON_END,
         eps_decay=EPSILON_DECAY_SCHEDULE, checkpoint_every=CHECKPOINT_EVERY,
         update_net_every=UPDATE_NET_EVERY,
-        results_dir=f'experiment_results/td3/standard/{_env.unwrapped.spec.id}',
-        exp_name_suffix=f'_steps_{TRAINING_STEPS*2}',
-        checkpoint_subdir=f'steps_{TRAINING_STEPS*2}'
+        results_dir=f'experiment_results/td3/standard/',
+        exp_name_suffix=f'_baseline',
+        checkpoint_subdir=f'baseline'
     )
+    """
 
     backbone_policy = (
-        f'models/standard/steps_{TRAINING_STEPS*2}_%run/Pendulum-v0/actor_{USE_MODEL_OF_STEP}',
-        f'models/standard/steps_{TRAINING_STEPS*2}_%run/Pendulum-v0/critic_{USE_MODEL_OF_STEP}')
+        f'models/standard/steps_30000_%run/Pendulum-v0/actor_{USE_MODEL_OF_STEP}',
+        f'models/standard/steps_30000_%run/Pendulum-v0/critic_{USE_MODEL_OF_STEP}'
+    )
     backbone_training(
         env=_env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS,
         backbone_policy=backbone_policy, buffer_len=BUFFER_LEN,
@@ -206,3 +209,17 @@ if __name__ == '__main__':
         results_dir='experiment_results/td3/backbone/backbone_continue/',
         exp_name_suffix=f'_from_steps_{USE_MODEL_OF_STEP}', checkpoint_subdir='backbone_continue'
     )
+
+    """backbone_policy = ('models/pretrain/actor', 'models/pretrain/critic')
+    backbone_training(
+        env=_env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS,
+        backbone_policy=backbone_policy, buffer_len=BUFFER_LEN,
+        buffer_prefill=BUFFER_PREFILL, df=DISCOUNT_FACTOR, actor_lr=ACTOR_LR,
+        critic_lr=CRITIC_LR, batch_size=BATCH_SIZE, eps_start=EPSILON_START,
+        eps_end=EPSILON_END, eps_decay=EPSILON_DECAY_SCHEDULE,
+        collection_policy_noise=COLLECTION_POLICY_NOISE,
+        checkpoint_every=-1,
+        results_dir='experiment_results/td3/backbone/from_pretrain/',
+        exp_name_suffix=f'_pendulum_torch', checkpoint_subdir='from_pretrain'
+    )
+    """
