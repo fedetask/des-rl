@@ -240,7 +240,8 @@ class TD3TargetComputer(BaseTargetComputer):
 
                 # If a backbone critic and actor are given, compute residual targets
                 if self.backbone_actor is not None:
-                    backbone_actions = self.backbone_actor(next_states_ts)
+                    with torch.no_grad():
+                        backbone_actions = self.backbone_actor(next_states_ts)
                     net_action_ts = common.clamp(  # Clamp residual action such that the total
                         net_action_ts,  # action is within the valid range
                         self.min_action - backbone_actions,
@@ -254,7 +255,8 @@ class TD3TargetComputer(BaseTargetComputer):
                     mode='min'
                 )
                 if self.backbone_critic is not None:
-                    target_values += self.backbone_critic(next_states_ts, backbone_actions)
+                    with torch.no_grad():
+                        target_values += self.backbone_critic(next_states_ts, backbone_actions)
                 rewards_ts[next_states_idx_ts] += self.df * target_values
         return rewards_ts.detach().numpy()
 
@@ -405,7 +407,8 @@ class TD3Trainer(BaseTrainer):
 
         q_values = self.dqac_networks.predict_values(states_ts, actions_ts, mode='all')
         if self.backbone_actor is not None:
-            backbone_values = self.backbone_actor(states_ts)[:, None, :]
+            with torch.no_grad():
+                backbone_values = self.backbone_actor(states_ts)[:, None, :]
             q_values += backbone_values
         n_nets = q_values.shape[1]
         squared_errors = ((q_values - targets_ts[:, None, :]) ** 2).squeeze().sum(-1) / n_nets

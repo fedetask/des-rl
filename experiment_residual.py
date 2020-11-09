@@ -57,7 +57,7 @@ def backbone_training(env: gym.Env, train_steps, num_runs, backbone_policy, buff
     """
     import inspect
 
-    exp_name = exp_name_prefix + 'backbone_' + exp_name_suffix
+    exp_name = exp_name_prefix + 'backbone' + exp_name_suffix
     if os.path.exists(os.path.join(results_dir, exp_name + '.npy')):
         warn = 'Warning: ' + str(exp_name) + ' already exists. Skipping.'
         print(warn)
@@ -177,9 +177,10 @@ if __name__ == '__main__':
     EPSILON_DECAY_SCHEDULE = 'lin'
     COLLECTION_POLICY_NOISE = 1
     CHECKPOINT_EVERY = 2500
+    USE_MODEL_OF_STEP = 7000
 
     _env = gym.make('Pendulum-v0')
-
+    """
     standard_training(
         env=_env, train_steps=TRAINING_STEPS * 2, num_runs=NUM_RUNS, buffer_len=BUFFER_LEN,
         buffer_prefill=BUFFER_PREFILL, actor_lr=ACTOR_LR,  critic_lr=CRITIC_LR,
@@ -190,10 +191,11 @@ if __name__ == '__main__':
         exp_name_suffix=f'_steps_{TRAINING_STEPS*2}_eps_{EPSILON_START}',
         checkpoint_subdir=f'steps_{TRAINING_STEPS*2}'
     )
+    """
 
     backbone_policy = (
-        f'models/standard/steps_{TRAINING_STEPS*2}_%run/Pendulum-v0/actor_{TRAINING_STEPS}',
-        f'models/standard/steps_{TRAINING_STEPS*2}_%run/Pendulum-v0/critic_{TRAINING_STEPS}')
+        f'models/standard/steps_{TRAINING_STEPS*2}_%run/Pendulum-v0/actor_{USE_MODEL_OF_STEP}',
+        f'models/standard/steps_{TRAINING_STEPS*2}_%run/Pendulum-v0/critic_{USE_MODEL_OF_STEP}')
     backbone_training(
         env=_env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS,
         backbone_policy=backbone_policy, buffer_len=BUFFER_LEN,
@@ -203,5 +205,5 @@ if __name__ == '__main__':
         collection_policy_noise=COLLECTION_POLICY_NOISE,
         checkpoint_every=CHECKPOINT_EVERY,
         results_dir='experiment_results/td3/backbone/backbone_continue/',
-        checkpoint_subdir='backbone_continue'
+        exp_name_suffix=f'_from_steps_{USE_MODEL_OF_STEP}', checkpoint_subdir='backbone_continue'
     )
