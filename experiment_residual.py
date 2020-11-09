@@ -176,7 +176,7 @@ if __name__ == '__main__':
     EPSILON_END = 0.0
     EPSILON_DECAY_SCHEDULE = 'lin'
     COLLECTION_POLICY_NOISE = 1
-    CHECKPOINT_EVERY = 2500
+    CHECKPOINT_EVERY = 1000
     USE_MODEL_OF_STEP = 7000
 
     _env = gym.make('Pendulum-v0')
