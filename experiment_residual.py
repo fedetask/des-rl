@@ -180,7 +180,7 @@ if __name__ == '__main__':
     USE_MODEL_OF_STEP = 7000
 
     _env = gym.make('Pendulum-v0')
-    """
+
     standard_training(
         env=_env, train_steps=TRAINING_STEPS * 2, num_runs=NUM_RUNS, buffer_len=BUFFER_LEN,
         buffer_prefill=BUFFER_PREFILL, actor_lr=ACTOR_LR,  critic_lr=CRITIC_LR,
@@ -188,10 +188,9 @@ if __name__ == '__main__':
         eps_decay=EPSILON_DECAY_SCHEDULE, checkpoint_every=CHECKPOINT_EVERY,
         update_net_every=UPDATE_NET_EVERY,
         results_dir=f'experiment_results/td3/standard/{_env.unwrapped.spec.id}',
-        exp_name_suffix=f'_steps_{TRAINING_STEPS*2}_eps_{EPSILON_START}',
+        exp_name_suffix=f'_steps_{TRAINING_STEPS*2}',
         checkpoint_subdir=f'steps_{TRAINING_STEPS*2}'
     )
-    """
 
     backbone_policy = (
         f'models/standard/steps_{TRAINING_STEPS*2}_%run/Pendulum-v0/actor_{USE_MODEL_OF_STEP}',
