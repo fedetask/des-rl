@@ -280,8 +280,9 @@ class TD3:
             net_action = self.networks.actor_net(
                 torch.tensor(state, dtype=self._dtype, device=device).unsqueeze(0))[0]
         if self.backbone_actor is not None:
-            backbone_action = self.backbone_actor(
-                torch.tensor(state, dtype=self._dtype).unsqueeze(0))[0].detach().cpu().numpy()
+            with torch.no_grad():
+                backbone_action = self.backbone_actor(
+                    torch.tensor(state, dtype=self._dtype).unsqueeze(0))[0].detach().cpu().numpy()
             residual = self.policy_train.act(net_action).detach().cpu().numpy()
             action = (backbone_action + residual).clip(self.min_action, self.max_action)
             return action, residual
@@ -309,9 +310,9 @@ if __name__ == '__main__':
     import networks
     from matplotlib import pyplot as plt
 
-    ENV_NAME = 'BipedalWalker-v3'
-    TRAIN_STEPS = 1000000
-    PREFILL_STEPS = 30000
+    ENV_NAME = 'Pendulum-v0'
+    TRAIN_STEPS = 15000
+    PREFILL_STEPS = 2000
     SHOW_PLOT = True
 
     env = gym.make(ENV_NAME)
@@ -322,16 +323,16 @@ if __name__ == '__main__':
     critic = networks.LinearNetwork(
         inputs=action_len+state_len,
         outputs=1,
-        n_hidden_layers=4,
-        n_hidden_units=256,
+        n_hidden_layers=1,
+        n_hidden_units=16,
         activation=F.relu
     ).to(device)
 
     actor = networks.LinearNetwork(
         inputs=state_len,
         outputs=action_len,
-        n_hidden_layers=4,
-        n_hidden_units=256,
+        n_hidden_layers=1,
+        n_hidden_units=16,
         activation=F.relu,
         activation_last_layer=torch.tanh,
         output_weight=max_action
@@ -344,20 +345,20 @@ if __name__ == '__main__':
         max_action=max_action,
         training_steps=TRAIN_STEPS,
         df=0.99,
-        batch_size=128,
-        critic_lr=5e-4,
-        actor_lr=5e-4,
+        batch_size=100,
+        critic_lr=1e-3,
+        actor_lr=1e-3,
         train_actor_every=2,
         update_targets_every=2,
         tau=0.005,
         target_noise=0.2,
         target_noise_clip=0.5,
         epsilon_start=0.2,
-        epsilon_end=0.05,
+        epsilon_end=0.0,
         epsilon_decay_schedule='lin',
         dtype=torch.float,
         evaluate_every=-1,
-        checkpoint_every=5000
+        checkpoint_every=-1
     )
     prefiller = replay_buffers.BufferPrefiller(num_transitions=PREFILL_STEPS)
     train_result = td3.train(env)
@@ -382,7 +383,5 @@ if __name__ == '__main__':
 
     common.save_models(
         models={'actor': actor, 'critic': critic},
-        dir=f'models/{env.unwrapped.spec.id}'
+        dir='models/standard/small_nets/'
     )
-
-
