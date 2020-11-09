@@ -406,9 +406,9 @@ class TD3Trainer(BaseTrainer):
         targets_ts = torch.tensor(targets, dtype=self.dtype)
 
         q_values = self.dqac_networks.predict_values(states_ts, actions_ts, mode='all')
-        if self.backbone_actor is not None:
+        if self.backbone_critic is not None:
             with torch.no_grad():
-                backbone_values = self.backbone_actor(states_ts)[:, None, :]
+                backbone_values = self.backbone_critic(states_ts, actions_ts)[:, None, :]
             q_values += backbone_values
         n_nets = q_values.shape[1]
         squared_errors = ((q_values - targets_ts[:, None, :]) ** 2).squeeze().sum(-1) / n_nets
