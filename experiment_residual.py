@@ -37,8 +37,8 @@ def get_actor_critic(state_len, action_len, max_action):
 
 def backbone_training(env: gym.Env, train_steps, num_runs, backbone_policy, buffer_len,
                       buffer_prefill, df, actor_lr, critic_lr, batch_size, eps_start, eps_end,
-                      eps_decay, collection_policy_noise, checkpoint_every, results_dir,
-                      exp_name_prefix='', exp_name_suffix='', checkpoint_subdir='/'):
+                      eps_decay, checkpoint_every, results_dir, exp_name_prefix='',
+                      exp_name_suffix='', checkpoint_subdir='/'):
     """This experiment pre-trains the actor network (and optionally the critic), then runs the TD3
     algorithm using the pre-trained actor (critic).
 
@@ -93,11 +93,10 @@ def backbone_training(env: gym.Env, train_steps, num_runs, backbone_policy, buff
             actor_lr=actor_lr, df=df, evaluate_every=-1, backbone_actor=backbone_actor,
             backbone_critic=backbone_critic, epsilon_start=eps_start, epsilon_end=eps_end,
             batch_size=batch_size, epsilon_decay_schedule=eps_decay,
-            checkpoint_every=checkpoint_every, checkpoint_dir=checkpoint_dir
+            checkpoint_every=checkpoint_every, checkpoint_dir=checkpoint_dir,
         )
         prefiller = replay_buffers.BufferPrefiller(
-            num_transitions=buffer_prefill, collection_policy=backbone_actor,
-            collection_policy_noise=collection_policy_noise, min_action=-max_action,
+            num_transitions=buffer_prefill, collection_policy=backbone_actor, min_action=-max_action,
             max_action=max_action, use_residual=True
         )
         train_res = td3_algorithm.train(env, buffer_prefiller=prefiller)
@@ -163,7 +162,7 @@ def standard_training(env: gym.Env, train_steps, num_runs, buffer_len, buffer_pr
 
 
 if __name__ == '__main__':
-    NUM_RUNS = 10
+    NUM_RUNS = 5
     TRAINING_STEPS = 15000
     BUFFER_PREFILL = 2000
     BUFFER_LEN = 100000
@@ -172,10 +171,9 @@ if __name__ == '__main__':
     UPDATE_NET_EVERY = 2
     DISCOUNT_FACTOR = 0.99
     BATCH_SIZE = 100
-    EPSILON_START = 0.2
+    EPSILON_START = 0.1
     EPSILON_END = 0.0
     EPSILON_DECAY_SCHEDULE = 'lin'
-    COLLECTION_POLICY_NOISE = 1
     CHECKPOINT_EVERY = 1000
     USE_MODEL_OF_STEP = 7000
 
@@ -194,20 +192,23 @@ if __name__ == '__main__':
     )
     """
 
+    """
     backbone_policy = (
         f'models/standard/steps_30000_%run/Pendulum-v0/actor_{USE_MODEL_OF_STEP}',
         f'models/standard/steps_30000_%run/Pendulum-v0/critic_{USE_MODEL_OF_STEP}'
     )
+    """
+
+    backbone_policy = (hardcoded_policies.pendulum_torch, None)
     backbone_training(
         env=_env, train_steps=TRAINING_STEPS, num_runs=NUM_RUNS,
         backbone_policy=backbone_policy, buffer_len=BUFFER_LEN,
         buffer_prefill=BUFFER_PREFILL, df=DISCOUNT_FACTOR, actor_lr=ACTOR_LR,
         critic_lr=CRITIC_LR, batch_size=BATCH_SIZE, eps_start=EPSILON_START,
         eps_end=EPSILON_END, eps_decay=EPSILON_DECAY_SCHEDULE,
-        collection_policy_noise=COLLECTION_POLICY_NOISE,
         checkpoint_every=CHECKPOINT_EVERY,
-        results_dir='experiment_results/td3/backbone/backbone_continue/',
-        exp_name_suffix=f'_from_steps_{USE_MODEL_OF_STEP}', checkpoint_subdir='backbone_continue'
+        results_dir='experiment_results/td3/backbone/backbone_hardcoded/',
+        exp_name_suffix=f'_small_noise', checkpoint_subdir='backbone_hardcoded'
     )
 
     """backbone_policy = ('models/pretrain/actor', 'models/pretrain/critic')

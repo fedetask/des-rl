@@ -191,8 +191,7 @@ class BufferPrefiller:
     """
 
     def __init__(self, num_transitions, add_info=False, shuffle=False, prioritized_replay=False,
-                 collection_policy=None, collection_policy_noise=None, min_action=None,
-                 max_action=None, use_residual=False):
+                 collection_policy=None, min_action=None, max_action=None, use_residual=False):
         """Instantiate the buffer prefiller.
 
         Args:
@@ -205,25 +204,15 @@ class BufferPrefiller:
                 if prioritized_replay is True, the transition will be (s, a, r, s', w, [info]).
             collection_policy: Function (numpy.ndarray) -> numpy.ndarray that returns an action
                 for a given state. Will be used to collect transitions.
-            collection_policy_noise (float): Standard deviation of noise added to actions
-                selected by the collection_policy.
         """
         self.num_transitions = num_transitions
         self.add_info = add_info
         self.shuffle = shuffle
         self.prioritized_replay = prioritized_replay
         self.collection_policy = collection_policy
-        self.collection_policy_noise = collection_policy_noise
         self.min_action = min_action
         self.max_action = max_action
         self.use_residual = use_residual
-        if collection_policy_noise is not None:
-            assert min_action is not None and max_action is not None,\
-                'Min and max action bust be specified when adding collection policy noise.'
-        else:
-            assert not use_residual and collection_policy_noise is None, \
-                'use_residual and collection_policy_noise can only be used together with a ' \
-                'collection policy.'
 
     def fill(self, replay_buffer, env):
         """Add the given number of transitions to the replay buffer by sampling
@@ -241,10 +230,7 @@ class BufferPrefiller:
                 with torch.no_grad():
                     a = self.collection_policy(torch.from_numpy(s).float().unsqueeze(0))[0]\
                         .detach().numpy()
-                if self.collection_policy_noise is not None:
-                    noise = np.random.normal(
-                        0, self.collection_policy_noise, env.action_space.shape)
-                    noise = noise.clip(self.min_action - a, self.max_action - a)
+                    noise = np.random.uniform(self.min_action - a, self.max_action - a)
                     a = a + noise
             s_prime, r, done, info = env.step(a)
             s_prime = s_prime if not done else None
