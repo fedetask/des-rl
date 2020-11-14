@@ -162,7 +162,7 @@ def standard_training(env: gym.Env, train_steps, num_runs, buffer_len, buffer_pr
 
 
 if __name__ == '__main__':
-    NUM_RUNS = 5
+    NUM_RUNS = 10
     TRAINING_STEPS = 15000
     BUFFER_PREFILL = 2000
     BUFFER_LEN = 100000
@@ -171,7 +171,7 @@ if __name__ == '__main__':
     UPDATE_NET_EVERY = 2
     DISCOUNT_FACTOR = 0.99
     BATCH_SIZE = 100
-    EPSILON_START = 0.1
+    EPSILON_START = 0.2
     EPSILON_END = 0.0
     EPSILON_DECAY_SCHEDULE = 'lin'
     CHECKPOINT_EVERY = 1000
