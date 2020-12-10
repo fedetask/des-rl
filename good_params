@@ -1,0 +1,10 @@
+Pendulum
+    STANDARD_TRAINING:
+       - eps_start: 0.2
+       - eps_end: 0.0
+       - decay: lin
+       - buf_prefill: 2000
+       - lr: 1e-3
+    BACKBONE:
+       - collection noise: 2.0
+       - eps start: 0.2

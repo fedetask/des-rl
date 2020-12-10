@@ -110,12 +110,12 @@ def split_replay_batch(samples):
         samples (list): List of tuples (s, a, r, s'), where:
             - s: numpy array, all s must have the same shape.
             - a: numpy array, all a must have the same shape.
-            - r: float.
+            - r: float, the reward.
             - s': numpy array, all non None s' must have the same shape.
 
     Returns:
-        A tuple (states, actions, rewards, next_states, next_states_idx) where each element
-        is a numpy array with correspondent data in the rows. Pay attention that the rewards
+        A tuple (states, actions, rewards, next_states, next_states_idx) where each
+        element is a numpy array with correspondent data in the rows. Pay attention that the rewards
         array is a column vector.
 
         Since the next state can be None when episode ends, the number of elements in next_states
@@ -139,6 +139,74 @@ def split_replay_batch(samples):
     next_states = np.array(next_states)
     next_states_idx = np.array(next_states_idx)
     return states, actions, rewards, next_states, next_states_idx
+
+
+def split_option_replay_batch(samples):
+    """Takes a list of transitions (s, o, a, l, r, s') and splits them into arrays.
+
+    Args:
+        samples (list): List of tuples (s, a, [is], r, s'), where:
+            - s: numpy array, all s must have the same shape.
+            - a: numpy array, all a must have the same shape.
+            - l: float with the likelihood of the action
+            - r: float, the reward.
+            - s': numpy array, all non None s' must have the same shape.
+
+    Returns:
+        A tuple (states, actions, likelihoods, rewards, next_states, next_states_idx) where each
+        element is a numpy array with correspondent data in the rows. Pay attention that the rewards
+        array is a column vector.
+
+        Since the next state can be None when episode ends, the number of elements in next_states
+        can be < len(samples). For this reason, next_states_idx is a numpy array that contains
+        the actual indices of elements in next_states.
+    """
+    states = np.array([transition[0] for transition in samples])
+    options = np.array([transition[1] for transition in samples])
+    actions = np.array([transition[2] for transition in samples])
+    likelihoods = np.array([transition[3] for transition in samples])
+    rewards = np.array([transition[4] for transition in samples])
+    if len(rewards.shape) == 1:
+        rewards = np.expand_dims(rewards, 1)
+    if len(actions.shape) == 1:
+        actions = np.expand_dims(actions, 1)
+
+    next_states = []
+    next_states_idx = []
+    for i, transition in enumerate(samples):
+        if transition[5] is not None:
+            next_states.append(transition[5])
+            next_states_idx.append(i)
+    next_states = np.array(next_states)
+    next_states_idx = np.array(next_states_idx)
+    return states, options, actions, likelihoods, rewards, next_states, next_states_idx
+
+
+def split_trace(trace):
+    """Split a multi-step trace into a tuple (states, actions, p_actions, rewards).
+
+    Args:
+        trace (list): Multi-step transition.
+
+    Returns:
+        A tuple (states, actions, p_actions, rewards) where each element is a list of numpy
+        arrays, one per time step. The states list contains one state more corresponding to the
+        final state of the transition.
+    """
+    states, actions, p_actions, rewards = [], [], [], []
+    t_len = (len(trace) - 1) // 4
+    for i in range(t_len):
+        t_sub = trace[i * 4: (i + 1) * 4]
+        states.append(t_sub[0])
+        actions.append(t_sub[1])
+        p_actions.append(t_sub[2])
+        rewards.append(t_sub[3])
+    states.append(trace[-1])
+    states = np.array(states)
+    actions = np.array(actions)
+    p_actions = np.array(p_actions)
+    rewards = np.array(rewards)
+    return states, actions, p_actions, rewards
 
 
 def compute_real_targets(episode_rewards, df):
@@ -186,3 +254,12 @@ def backbonize(func, act_shape):
             actions[i] = torch.tensor(action)
         return actions.float()
     return _to_torch
+
+
+def state_to_tensor(state):
+    return torch.from_numpy(state).float().unsqueeze(0)
+
+
+def tensor_to_action(action):
+    assert action.shape[0] == 1
+    return action[0].cpu().numpy()

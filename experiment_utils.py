@@ -139,7 +139,7 @@ def save_results_json(dir, filename, results):
         results (dict): Dictionary of results
     """
     file_path = os.path.join(dir, filename)
-    assert  not os.path.exists(file_path), 'File ' + str(file_path) + ' already exists!'
+    assert not os.path.exists(file_path), 'File ' + str(file_path) + ' already exists!'
     if not os.path.exists(dir):
         os.makedirs(dir)
     with open(file_path, 'w') as fp:
@@ -156,7 +156,7 @@ def save_results_numpy(dir, filename, results):
     assert not os.path.exists(file_path), 'File ' + str(file_path) + ' already exists!'
     if not os.path.exists(dir):
         os.makedirs(dir)
-    np.save(file_path, results)
+    np.save(file_path, results, allow_pickle=True)
 
 
 def read_result_numpy(dir, file):

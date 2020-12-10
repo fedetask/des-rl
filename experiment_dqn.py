@@ -6,7 +6,8 @@ from tqdm import tqdm
 import numpy as np
 import json
 
-from deepq import computations, deepqnetworks, policies, replay_buffers, utils
+from deepq import computations, deepqnetworks, policies, replay_buffers
+import utils
 import experiment_utils
 import hardcoded_policies
 
@@ -83,7 +84,7 @@ def run_experiment(p_hardcoded_start, p_hardcoded_schedule,
 
     # Replay buffer and prefiller
     replay_buffer = replay_buffers.FIFOReplayBuffer(maxlen=buffer_len)
-    prefiller = replay_buffers.UniformGymPrefiller()
+    prefiller = replay_buffers.BufferPrefiller()
 
     # Q Networks
     q_net = QNet(state_shape=4, act_shape=2, n_layers=3, n_units=16)
@@ -246,7 +247,7 @@ if __name__ == '__main__':
             for end_steps, lengths in zip(exp_episode_end_steps, exp_rewards)
         ]
 
-        x_avg, y_avg, var, y_arrays = experiment_utils.merge_plots(reward_plots)
+        x_avg, y_avg, var, y_arrays = experiment_utils._merge_plots(reward_plots)
 
         json_content = json.dumps(experiment_data)
         f = open(results_folder + exp_name, 'w')

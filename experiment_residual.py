@@ -38,7 +38,7 @@ def get_actor_critic(state_len, action_len, max_action):
 def backbone_training(env: gym.Env, train_steps, num_runs, backbone_policy, buffer_len,
                       buffer_prefill, df, actor_lr, critic_lr, batch_size, eps_start, eps_end,
                       eps_decay, checkpoint_every, results_dir, exp_name_prefix='',
-                      exp_name_suffix='', checkpoint_subdir='/'):
+                      exp_name_suffix='', checkpoint_subdir='/', eval_episodes=100):
     """This experiment pre-trains the actor network (and optionally the critic), then runs the TD3
     algorithm using the pre-trained actor (critic).
 
@@ -71,6 +71,7 @@ def backbone_training(env: gym.Env, train_steps, num_runs, backbone_policy, buff
     max_action = env.action_space.high[0]
 
     train_scores = []
+    eval_scores = []
     for run in range(num_runs):
         print('Backbone training, run ' + str(run))
 
@@ -103,8 +104,10 @@ def backbone_training(env: gym.Env, train_steps, num_runs, backbone_policy, buff
 
         train_scores.append(experiment_utils.Plot(
             train_res['end_steps'], train_res['rewards'], name='train'))
+        eval_scores.append(td3_algorithm.evaluate(env=env, n_episodes=eval_episodes))
     data_dict = {
-        'train': train_scores
+        'train': train_scores,
+        'eval': np.mean(eval_scores)
     }
 
     experiment_utils.save_results_numpy(results_dir, exp_name, data_dict)
@@ -113,7 +116,8 @@ def backbone_training(env: gym.Env, train_steps, num_runs, backbone_policy, buff
 def standard_training(env: gym.Env, train_steps, num_runs, buffer_len, buffer_prefill, actor_lr,
                       critic_lr, df, batch_size, eps_start, eps_end, eps_decay, checkpoint_every,
                       results_dir, update_net_every=2, exp_name_prefix='', exp_name_suffix='',
-                      collection_policy=None, collection_policy_noise=None, checkpoint_subdir='/'):
+                      collection_policy=None, collection_policy_noise=None,
+                      checkpoint_subdir='/', eval_episodes=100):
     """Perform standard training with TD3. and saves the results.
 
     Args:
@@ -129,7 +133,7 @@ def standard_training(env: gym.Env, train_steps, num_runs, buffer_len, buffer_pr
     max_action = env.action_space.high[0]
 
     train_scores = []
-    train_eval_scores = []
+    eval_scores = []
     for run in range(num_runs):
         checkpoint_dir = os.path.join('models/standard/', f'{checkpoint_subdir}_{run}')
 
@@ -146,16 +150,16 @@ def standard_training(env: gym.Env, train_steps, num_runs, buffer_len, buffer_pr
                                 checkpoint_dir=checkpoint_dir)
         prefiller = replay_buffers.BufferPrefiller(
             num_transitions=buffer_prefill, collection_policy=collection_policy,
-            collection_policy_noise=collection_policy_noise, min_action=-max_action,
+            min_action=-max_action,
             max_action=max_action, use_residual=False
         )
         train_res = td3_algorithm.train(env, buffer_prefiller=prefiller)
         train_scores.append(experiment_utils.Plot(
             train_res['end_steps'], train_res['rewards'], name='train'))
-        train_eval_scores.append(experiment_utils.Plot(
-            train_res['eval_steps'], train_res['eval_scores'], name='eval'))
+        eval_scores.append(td3_algorithm.evaluate(env=env, n_episodes=eval_episodes))
     data_dict = {
-        'train': train_scores
+        'train': train_scores,
+        'eval': np.mean(eval_scores)
     }
     exp_name = exp_name_prefix + standard_training.__name__ + exp_name_suffix
     experiment_utils.save_results_numpy(results_dir, exp_name, data_dict)
@@ -208,7 +212,8 @@ if __name__ == '__main__':
         eps_end=EPSILON_END, eps_decay=EPSILON_DECAY_SCHEDULE,
         checkpoint_every=CHECKPOINT_EVERY,
         results_dir='experiment_results/td3/backbone/backbone_hardcoded/',
-        exp_name_suffix=f'_small_noise', checkpoint_subdir='backbone_hardcoded'
+        exp_name_suffix=f'_eps_{EPSILON_START}_lr_{ACTOR_LR}',
+        checkpoint_subdir='backbone_hardcoded'
     )
 
     """backbone_policy = ('models/pretrain/actor', 'models/pretrain/critic')

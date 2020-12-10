@@ -37,12 +37,41 @@ def plot_comparison():
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', action='store', nargs=1, required=True)
+    parser.add_argument('--data', action='store', nargs='+', required=True)
+    parser.add_argument('--max-plots', action='store', nargs=1, type=int, required=False,
+                        default=[5])
+    parser.add_argument('--contains', action='store', nargs='+', type=str, required=False,
+                        default=[])
+    parser.add_argument('--conf', action='store', nargs=1, type=float, required=False)
     args = parser.parse_args()
 
-    res = experiment_utils.read_result_numpy(
-        os.path.dirname(args.data[0]), os.path.basename(args.data[0]))['train']
-    x, y, _, _ = experiment_utils.merge_plots(res)
+    plot_paths = []
+    search_paths = args.data
+    for path in search_paths:
+        if os.path.isdir(path):
+            for file in os.listdir(path):
+                if len(args.contains) == 0 or any([s in file for s in args.contains]):
+                    abs_path = os.path.join(path, file)
+                    if os.path.isdir(abs_path):
+                        search_paths.append(abs_path)
+                    else:
+                        plot_paths.append(abs_path)
+        else:
+            plot_paths.append(path)
 
-    plt.plot(x, y)
-    plt.show()
+    max_plots = args.max_plots[0]
+    tot = 0
+    while tot < len(plot_paths):
+        start, end = tot, min(tot + max_plots, len(plot_paths))
+        print(f'{start} {end}')
+        for i in range(start, end):
+            res = experiment_utils.read_result_numpy(
+                os.path.dirname(plot_paths[i]), os.path.basename(plot_paths[i]))['train']
+            x, y, var, _ = experiment_utils.merge_plots(res)
+            stdev = np.sqrt(var)
+            plt.plot(x, y, label=os.path.basename(plot_paths[i]))
+            plt.fill_between(x, y - stdev, y+stdev, alpha=0.2)
+            tot += 1
+        plt.legend()
+        plt.show()
+        plt.close()

@@ -1,4 +1,5 @@
 import abc
+import copy
 
 import torch
 from torch import nn
@@ -8,7 +9,7 @@ import gym
 import tqdm
 
 import common
-
+from deepq import deepqnetworks
 
 class BasePretrainer(abc.ABC):
 
@@ -38,7 +39,7 @@ class BasePretrainer(abc.ABC):
         episode_rewards = []
         state = env.reset()
         for step in range(collection_steps):
-            action = collection_policy(state)
+            action = collection_policy(torch.tensor(state).unsqueeze(0))[0].numpy()
             states[step] = state
             actions[step] = action
             next_state, r, done, info = env.step(action)
@@ -121,10 +122,11 @@ class ActorCriticPretrainer(BasePretrainer):
     """
 
     def __init__(self, env, actor, collection_policy, collection_steps, training_steps, critic=None,
-                 actor_stop_steps=-1,  batch_size=128, bootstrap_critic=True,
-                 actor_optimizer=None, critic_optimizer=None, df=0.99, actor_lr=1e-3,
-                 critic_lr=0.5e-3, actor_loss=torch.nn.MSELoss(), critic_loss=torch.nn.MSELoss(),
-                 evaluate_every=500, eval_episodes=20, dtype=torch.float):
+                 actor_stop_steps=-1,  batch_size=128, actor_optimizer=None,
+                 critic_optimizer=None, df=0.99, actor_lr=1e-3, critic_lr=0.5e-3,
+                 actor_loss=torch.nn.MSELoss(), critic_loss=torch.nn.MSELoss(),
+                 prevent_extrapolation=False, evaluate_every=500, eval_episodes=20,
+                 dtype=torch.float):
         """Create the pretrainer for the actor critic networks.
 
         Args:
@@ -138,8 +140,6 @@ class ActorCriticPretrainer(BasePretrainer):
             critic (torch.nn.Module): Critic to be trained. Leave None for only actor training.
             actor_stop_steps (int): If > 0, the actor training will be stopped at actor_stop_steps.
             batch_size (int): Size of a sampled batch.
-            bootstrap_critic (bool): Whether to use bootstrapped estimates of the returns,
-                or to use the actual total discounted return when training the critic.
             actor_optimizer (torch.optim.Optimizer): Optimizer to train the actor. If None,
                 Adam with the given actor_lr will be used.
             critic_optimizer (torch.optim.Optimizer): Optimizer to train the actor. If None,
@@ -154,29 +154,35 @@ class ActorCriticPretrainer(BasePretrainer):
         """
         self.env = env
         self.actor = actor
-        self.critic = critic
+        self.networks = deepqnetworks.DeepQActorCritic(
+            critic_nets=[critic, copy.deepcopy(critic)],
+            actor_net=actor,
+        )
         self.collection_policy = collection_policy
         self.collection_steps = collection_steps
         self.training_steps = training_steps
         self.actor_stop_steps = actor_stop_steps
         self.batch_size = batch_size
-        self.bootstrap_critic = bootstrap_critic
         self.df = df
         self.actor_optimizer = actor_optimizer
         self.critic_optimizer = critic_optimizer
         self.actor_loss = actor_loss
         self.critic_loss = critic_loss
+        self.prevent_extrapolation = prevent_extrapolation
         self.evaluate_every = evaluate_every
         self.eval_episodes = eval_episodes
         self.dtype = dtype
         if self.actor_optimizer is None:
             self.actor_optimizer = torch.optim.Adam(actor.parameters(), lr=actor_lr)
         if self.critic_optimizer is None and critic is not None:
-            self.critic_optimizer = torch.optim.Adam(critic.parameters(), lr=critic_lr)
+            self.critic_optimizer = torch.optim.Adam(
+                self.networks.get_trainable_params()[0],
+                lr=critic_lr
+            )
         assert actor_stop_steps < 0 or critic is not None,\
             'Ambiguous setup: receiving actor_stop_steps > 0 when critic is None.'
 
-    def train(self, *args, **kwargs):
+    def train(self, model_save_dir=None, *args, **kwargs):
         """Perform the training.
 
         Returns:
@@ -207,17 +213,21 @@ class ActorCriticPretrainer(BasePretrainer):
                 actor_loss = self._train_net(
                     predicted_actions, action_batch, self.actor_loss, self.actor_optimizer)
                 actor_losses.append(actor_loss)
-            if self.critic is not None:
-                predicted_values = self.critic(state_batch, action_batch)
-                if self.bootstrap_critic:
-                    targets = self._bootstrap_targets(reward_batch, next_states_batch, dones_batch)
-                else:
-                    targets = return_batch
+            if self.networks is not None:
+                predicted_values = self.networks.predict_values(
+                    state_batch, action_batch, mode='first')
+                targets = self._bootstrap_targets(reward_batch, next_states_batch, dones_batch)
+                if self.prevent_extrapolation:
+                    predicted_values_rand, targets_rand = self._generate_counter_samples(state_batch)
+                    predicted_values = torch.cat([predicted_values, predicted_values_rand])
+                    targets = torch.cat((targets, targets_rand))
+                self.networks.update_critic(mode='soft', tau=0.05)
                 critic_loss = self._train_net(
                     predicted_values, targets, self.critic_loss, self.critic_optimizer)
                 training_range.set_description(
                     'Actor loss: ' + str(actor_loss) + ' critic loss: ' + str(critic_loss))
                 critic_losses.append(critic_loss)
+
             if self.evaluate_every > 0 and step % self.evaluate_every == 0:
                 eval_score = self.eval(self.env, self.actor, self.eval_episodes, self.dtype)
                 eval_scores.append(eval_score)
@@ -225,6 +235,11 @@ class ActorCriticPretrainer(BasePretrainer):
         if self.evaluate_every > 0:
             eval_scores.append(self.eval(self.env, self.actor, self.eval_episodes, self.dtype))
             eval_steps.append(self.training_steps - 1)
+        if model_save_dir is not None:
+            common.save_models(
+                models={'actor': self.networks.actor_net, 'critic': self.networks.critic_nets},
+                dir=model_save_dir
+            )
         return {
             'actor_loss': np.array(actor_losses),
             'critic_loss': np.array(critic_losses),
@@ -233,11 +248,53 @@ class ActorCriticPretrainer(BasePretrainer):
         }
 
     def _bootstrap_targets(self, rewards, next_states, dones):
-        next_states_np = next_states.detach().numpy()
-        actions = torch.tensor([self.collection_policy(s) for s in next_states_np])
+        actions = self.collection_policy(next_states)
         with torch.no_grad():
-            targets = self.critic(next_states, actions)
+            targets = self.networks.predict_targets(next_states, actions, mode='min')
         return rewards + dones * self.df * targets
+
+    def _generate_counter_samples(self, states):
+        """Generate prediction-target pairs to counter network extrapolation by sampling random
+        actions and assigning them lower target value.
+
+        Args:
+            states (torch.Tensor):
+
+        Returns:
+           A tuple (predictions, targets) where predictions is a tensor with the critic
+           predicted values for the given states and randomly sampled actions, and targets is a
+           tensor with the corresponding penalized target value.
+        """
+        rand_actions = torch.stack(
+            [torch.tensor(self.env.action_space.sample()) for i in range(states.shape[0])]
+        )
+        policy_actions = torch.stack(
+            [torch.tensor(self.collection_policy(s)) for s in states]
+        )
+        predicted_values = self.networks.predict_values(states, rand_actions, mode='first')
+        coef = (rand_actions - policy_actions)**2
+        #coef = coef / (self.env.action_space.high - self.env.action_space.low)
+
+        with torch.no_grad():
+            policy_values = self.networks.predict_targets(states, policy_actions, mode='min')
+            heuristic_values = policy_values - coef * torch.abs(policy_values)
+        return predicted_values, heuristic_values
+
+
+def plot_action_sample(env, critic, policy, n_states=5, n_steps=50):
+    action_linspace = np.linspace(env.action_space.low, env.action_space.high, n_steps)
+    states = [env.observation_space.sample() for i in range(n_states)]
+    policy_actions = [policy(state) for state in states]
+
+    for state, p_action in zip(states, policy_actions):
+        # For each state compute critic value on each action value
+        state_ts = torch.stack([torch.from_numpy(state) for i in range(n_steps)])
+        actions_ts = torch.stack([torch.from_numpy(action) for action in action_linspace])
+        with torch.no_grad():
+            values = critic(state_ts, actions_ts).numpy()
+            plt.plot(action_linspace, values, label=f'Policy action {p_action}')
+    plt.legend()
+    plt.show()
 
 
 if __name__ == '__main__':
@@ -251,7 +308,7 @@ if __name__ == '__main__':
     actor_net = networks.LinearNetwork(
         inputs=state_len,
         outputs=action_len,
-        n_hidden_layers=1,
+        n_hidden_layers=2,
         n_hidden_units=256,
         activation_last_layer=torch.tanh,
         output_weight=env.action_space.high[0],
@@ -261,19 +318,22 @@ if __name__ == '__main__':
     critic_net = networks.LinearNetwork(
         inputs=state_len + action_len,
         outputs=1,
-        n_hidden_layers=1,
+        n_hidden_layers=2,
         n_hidden_units=256,
     )
 
     training_steps = 5000
     pretrainer = ActorCriticPretrainer(
-        env=env, actor=actor_net, critic=critic_net, collection_policy=hardcoded_policies.pendulum,
+        env=env, actor=actor_net, critic=critic_net,
+        collection_policy=hardcoded_policies.pendulum_torch,
         collection_steps=training_steps, training_steps=training_steps,
-        actor_stop_steps=-1, dtype=torch.float, evaluate_every=500,
-        eval_episodes=10, actor_lr=5e-3, critic_lr=5e-3
+        actor_stop_steps=-1, dtype=torch.float, evaluate_every=-1, prevent_extrapolation=False,
+        eval_episodes=0, actor_lr=1e-4, critic_lr=1e-4
     )
+    res = pretrainer.train(model_save_dir='models/pretrain/')
 
-    res = pretrainer.train()
+    plot_action_sample(env, critic_net, hardcoded_policies.pendulum)
+
     eval_steps, eval_scores = res['eval_steps'], res['eval_scores']
     actor_loss, critic_loss = res['actor_loss'], res['critic_loss']
     policy_baseline = hardcoded_policies.eval_policy(hardcoded_policies.pendulum, env, 50)

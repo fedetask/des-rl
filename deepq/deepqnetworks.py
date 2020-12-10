@@ -290,7 +290,7 @@ class DeepQActorCritic(BaseDQActorCriticNetworks):
         actions = self.actor_net(states)
         return actions
 
-    def predict_targets(self, states, actions, mode='all', *args, **kwargs):
+    def predict_targets(self, states, actions, mode='all', grad=False, *args, **kwargs):
         """Predict the target values for the given state-action pairs.
 
         Targets can be computed from the critic networks in several modes:
@@ -304,6 +304,7 @@ class DeepQActorCritic(BaseDQActorCriticNetworks):
             states (torch.Tensor): A Tensor with the states.
             actions (torch.Tensor): A Tensor with the actions.
             mode (str): How to compute the value.
+            grad (bool): Whether to track gradients for this computation.
 
         Returns:
             A Tensor with the target values for the given state-action pairs. If mode 'all' is
@@ -314,15 +315,30 @@ class DeepQActorCritic(BaseDQActorCriticNetworks):
             'Batch sizes for given states and actions do not correspond.'
 
         if mode == 'first':
-            return self.critic_target_nets[0](states, actions)
+            if grad:
+                return self.critic_target_nets[0](states, actions)
+            else:
+                with torch.no_grad():
+                    return self.critic_target_nets[0](states, actions)
         if mode == 'rand':
             net = random.choice(self.critic_target_nets)
-            return net(states, actions)
+            if grad:
+                return net(states, actions)
+            else:
+                with torch.no_grad():
+                    return net(states, actions)
 
-        q_values = torch.stack(
-            [target_critic(states, actions) for target_critic in self.critic_target_nets],
-            dim=1
-        )
+        if grad:
+            q_values = torch.stack(
+                [target_critic(states, actions) for target_critic in self.critic_target_nets],
+                dim=1
+            )
+        else:
+            with torch.no_grad():
+                q_values = torch.stack(
+                    [target_critic(states, actions) for target_critic in self.critic_target_nets],
+                    dim=1
+                )
         if mode == 'avg':
             return torch.mean(q_values, dim=1)
         if mode == 'min':
@@ -330,8 +346,12 @@ class DeepQActorCritic(BaseDQActorCriticNetworks):
         if mode == 'all':
             return q_values
 
-    def predict_target_actions(self, states, *args, **kwargs):
-        return self.actor_target_net(states)
+    def predict_target_actions(self, states, grad=False, *args, **kwargs):
+        if grad:
+            return self.actor_target_net(states)
+        else:
+            with torch.no_grad():
+                return self.actor_target_net(states)
 
     def get_trainable_params(self, *args, **kwargs):
         """Return the critic and actor parameters.

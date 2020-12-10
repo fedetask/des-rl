@@ -134,4 +134,5 @@ dmypy.json
 
 # Experiments
 experiment_results/
-
+models/
+experiment_plots/

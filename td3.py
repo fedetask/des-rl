@@ -380,8 +380,3 @@ if __name__ == '__main__':
 
     final_eval = td3.evaluate(env, 5)
     print('Final evaluation: ' + str(final_eval))
-
-    common.save_models(
-        models={'actor': actor, 'critic': critic},
-        dir='models/standard/small_nets/'
-    )

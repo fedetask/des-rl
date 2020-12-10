@@ -19,6 +19,7 @@ import numpy as np
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import common
+import deepq.replay_buffers
 
 
 class BaseTargetComputer(abc.ABC):
@@ -139,7 +140,7 @@ class DoubleQTargetComputer(BaseTargetComputer):
         Returns:
             A Numpy column vector with computed target values on the rows.
         """
-        states, acts, rewards, next_states, next_states_idx = batch
+        _, _, rewards, next_states, next_states_idx = batch
 
         target_values = torch.tensor(rewards, dtype=self.dtype)  # Init target values with rewards
 
@@ -179,8 +180,8 @@ class TD3TargetComputer(BaseTargetComputer):
             min_action (Union[float, numpy.ndarray, torch.Tensor]): Right-clipping value for target
                 actions after adding the noise. If None, no clipping will be performed.
             df (float): The discount factor.
-            target_noise (Union[float, numpy.ndarray]): Noise added to the target action along
-                each dimension.
+            target_noise (Union[float, numpy.ndarray]): Std of the noise added to the target action
+                along each dimension.
             noise_clip (Union[float, numpy.ndarray]): Noise will be clipped to
                 (-noise_clip, +noise_clip).
             dtype (torch.dtype): Type to be used in computations.
@@ -245,7 +246,8 @@ class TD3TargetComputer(BaseTargetComputer):
                     net_action_ts = common.clamp(  # Clamp residual action such that the total
                         net_action_ts,  # action is within the valid range
                         self.min_action - backbone_actions,
-                        self.max_action - backbone_actions)
+                        self.max_action - backbone_actions
+                    )
                 else:
                     net_action_ts = torch.clamp(net_action_ts, self.min_action, self.max_action)
 
@@ -266,7 +268,6 @@ class DQNTrainer(BaseTrainer):
     def __init__(
             self,
             dq_networks,
-            loss=F.mse_loss,
             optimizer=None,
             lr=1e-4,
             momentum=0.9,
@@ -276,8 +277,6 @@ class DQNTrainer(BaseTrainer):
         Args:
             dq_networks (core.algorithms.dqnetworks.BaseDQNetworks): DQNetwork object to be trained.
                 Must accept
-            loss (function): A function that takes two Tensors (values and targets) and returns a
-                scalar tensor with the loss value.
             optimizer (torch.optim.Optimizer): Optimizer to use for training. If None,
                 a SGD optimizer with the given learning rate and momentum will be used.
             lr (float): Learning rate for the SGD optimizer.
@@ -286,7 +285,6 @@ class DQNTrainer(BaseTrainer):
         """
         super().__init__(dtype=dtype)
         self.dq_networks = dq_networks
-        self.loss = loss
         if optimizer is not None:
             self.optimizer = optimizer
         else:
@@ -296,7 +294,7 @@ class DQNTrainer(BaseTrainer):
                 momentum=momentum
             )
 
-    def train(self, batch, targets, *args, **kwargs):
+    def train(self, batch, targets, importance_samples=None, *args, **kwargs):
         """Perform training steps on the given DQNetworks object for the given inputs and targets.
 
         Args:
@@ -307,6 +305,8 @@ class DQNTrainer(BaseTrainer):
                 element of next_states_idx is k, then the k-th element of next_states refers to
                 the k-th element of states.
             targets (numpy.ndarray): Numpy column vector with targets on the rows.
+            importance_samples (numpy.ndarray): Array with importance samples for each transition.
+                In this case the loss is mean(importance_samples * (predictions, targets)**2).
 
         Returns:
             A tuple with training info: (loss, grads)
@@ -314,9 +314,12 @@ class DQNTrainer(BaseTrainer):
         states, actions, _, _, next_states_idx = batch
         actions_idx_ts = torch.tensor(actions, dtype=torch.long)
         targets_ts = torch.tensor(targets, dtype=self.dtype)
-
+        importance_samples_ts = torch.tensor(importance_samples)
         values = self.dq_networks.predict_values(states).gather(1, actions_idx_ts)
-        loss = self.loss(values, targets_ts)
+        loss = (values - targets_ts)**2
+        if importance_samples is not None:
+            loss *= importance_samples_ts
+        loss = loss.mean()
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
@@ -363,7 +366,6 @@ class TD3Trainer(BaseTrainer):
         super().__init__(dtype=dtype)
         self.dqac_networks = dqac_networks
         self.loss = loss
-        self.actor_beta = actor_beta
         self._actor_lr = actor_lr
         self.backbone_actor = backbone_actor
         self.backbone_critic = backbone_critic
@@ -377,13 +379,6 @@ class TD3Trainer(BaseTrainer):
                 dqac_networks.get_trainable_params()[1],
                 lr=actor_lr
             )
-
-        if self.actor_beta is not None:
-            def update_beta(epoch):
-                lr = self.actor_beta.cur_value
-                self.actor_beta.update()
-                return lr
-            self._actor_lr_scheduler = lr_scheduler.LambdaLR(self.actor_optimizer, update_beta)
 
     def train(self, batch, targets, train_actor=False, weights=None, *args, **kwargs):
         """Perform one optimization step on the critic and actor networks for the given samples.
@@ -400,7 +395,7 @@ class TD3Trainer(BaseTrainer):
             train_actor (bool): Whether to train the actor network.
             weights (numpy.ndarray): Optional array of weights for the gradient of each sample.
         """
-        states, actions, rewards, next_states, next_states_idx = batch
+        states, actions, _, _, _ = batch
         states_ts = torch.tensor(states, dtype=self.dtype)
         actions_ts = torch.tensor(actions, dtype=self.dtype)
         targets_ts = torch.tensor(targets, dtype=self.dtype)
@@ -427,10 +422,107 @@ class TD3Trainer(BaseTrainer):
             self.actor_optimizer.zero_grad()
             actor_loss.backward()
             self.actor_optimizer.step()
-            if self.actor_beta is not None:
-                self._actor_lr_scheduler.step()
         return {
             'critic_loss': float(critic_loss.detach().numpy()),
             'actor_loss': float(actor_loss.detach().numpy()) if actor_loss is not None else None,
         }
 
+
+class TD3OptionTraceTrainer:
+    """Implementation of a TD3 trainer for a sub-policy.
+    """
+
+    def __init__(self,
+                 dqac_networks,
+                 df=0.99,
+                 policy_noise=0.1,
+                 rho_max=1,
+                 lr=0.5e-3,
+                 dtype=torch.float):
+        """Instantiate the trainer.
+
+        Args:
+            dqac_networks (deepqnetworks.DeepQActorCritic): The DeepQActorCritic
+                containing the networks to train.
+            df (float): Discount factor.
+            lr (float): Learning rate.
+            dtype (torch.dtype): Type used for tensor computations.
+        """
+        super().__init__(dtype=dtype)
+        self.dqac_networks = dqac_networks
+        self.df = df
+        self.policy_noise = policy_noise
+        self.rho_max = rho_max
+        self.optimizer = torch.optim.Adam(self.dqac_networks.get_trainable_params(), lr=lr)
+
+    def train(self, batch, manager_critic, train_actor=False):
+        """Perform one optimization step on the critic and actor networks for the given samples.
+
+        Args:
+            batch (list): List of Trajectory objects.
+            train_actor (bool): Whether to train the actor network.
+                importance_samples (numpy.ndarray): Numpy array with shape (N, 1) containing the
+                importance samples to apply, with N being the number of state-action pairs in
+                the batch.
+        """
+        n_episodes = len(batch)
+        max_length = max(len(trajectory.rewards) for trajectory in batch)
+        q_ret = None
+        tot_loss = torch.tensor([0.])
+        for t in range(1, max_length):
+            mask = [i for i in range(n_episodes) if batch[i].length() - t >= 0]
+            # old_policies contains log_p for each action
+            states, actions, old_policies, rewards = self.extract(batch, t, mask)
+
+            # Init retrace target if necessary and perform Bellman step
+            if t == 1:
+                q_ret = self._initial_q_ret(batch, manager_critic)
+            q_ret[mask] = rewards + self.df * q_ret[mask]
+
+            # Compute value and actor losses
+            q_values = self.dqac_networks.predict_values(states, actions, mode='avg')
+            value_loss = ((q_values - q_ret)**2 / 2).mean()
+            actor_loss = torch.tensor([0.])
+            cur_actions = self.dqac_networks.predict_actions(states)
+            if train_actor:
+                new_q_values = self.dqac_networks.predict_values(states, cur_actions)
+                actor_loss = (-new_q_values).mean()
+            tot_loss += value_loss + actor_loss
+
+            # Compute importance weights
+            distr = torch.distributions.normal.Normal(loc=cur_actions, scale=self.policy_noise)
+            log_p_cur = distr.log_prob(actions)
+            rho = torch.exp(log_p_cur - old_policies.log()).clamp(max=self.rho_max).detach()
+
+            # Update retrace target. Here we use Q(states, pi(states)) as
+            # a single sample-estimate of V(states)
+            q_values_target = self.dqac_networks.predict_targets(states, actions, mode='min',
+                                                                 grad=False)
+            values_target = self._get_value(states, manager_critic)
+            q_ret[mask] = rho * (q_ret[mask] - q_values_target) + values_target
+        tot_loss.backward()
+        self.optimizer.step()
+
+    def extract(self, batch, t, mask):
+        states = torch.cat(tuple(batch[i].states[-t] for i in mask), dim=0)
+        actions = torch.cat(tuple(batch[i].actions[-t] for i in mask), dim=0)
+        policies = torch.cat(tuple(batch[i].policies[-t] for i in mask), dim=0)
+        rewards = torch.cat(tuple(batch[i].rewards[-t] for i in mask), dim=0)
+        return states, actions, policies, rewards
+
+    def _initial_q_ret(self, trajectories, manager_critic):
+        # Compute the initial retrace action-value.
+        q_rets = torch.empty(len(trajectories), 1)
+        for i in range(len(trajectories)):
+            if trajectories[i].last_state is None:
+                q_rets[i, 0] = 0.
+            else:
+                with torch.no_grad():
+                    # Compute off-policy value of the manager
+                    q_values = manager_critic.predict_target_values(trajectories[i].last_state)
+                    q_rets[i, 0] = q_values.max(dim=1).values
+        return q_rets
+
+    def _get_value(self, states, manager_critic):
+        critic_q_values = manager_critic.predict_target_values(states)
+        return critic_q_values.max(dim=1).values
